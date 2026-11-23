@@ -44,7 +44,7 @@ const listeners = new Set<() => void>();
 let cloakerCache: Cloaker[] | null = null;
 let logCache: CloakerLog[] | null = null;
 
-function readCloakers(): Cloaker[] {
+export function readCloakers(): Cloaker[] {
   if (typeof window === "undefined") return DEFAULT_CLOAKERS;
   if (cloakerCache) return cloakerCache;
   try {
@@ -239,24 +239,28 @@ export function isBotUserAgent(userAgent?: string): boolean {
 export function registerVisit(id: string, simulatedIsBot?: boolean): string | null {
   const cloakers = readCloakers();
   const cloaker = cloakers.find((l) => l.id === id);
-  if (!cloaker || !cloaker.active) return null;
+  if (cloaker && !cloaker.active) return null;
 
   const isBot = simulatedIsBot !== undefined ? simulatedIsBot : isBotUserAgent();
 
-  const finalDestination = isBot ? cloaker.safePage : buildDestination(cloaker);
+  const finalDestination = isBot
+    ? (cloaker?.safePage || "/safe/bella")
+    : (cloaker ? buildDestination(cloaker) : "/safe/bella");
 
   // Update cloaker counters
-  writeCloakers(
-    cloakers.map((l) => {
-      if (l.id !== id) return l;
-      return {
-        ...l,
-        visits: l.visits + 1,
-        humanVisits: isBot ? l.humanVisits : l.humanVisits + 1,
-        botVisits: isBot ? l.botVisits + 1 : l.botVisits,
-      };
-    })
-  );
+  if (cloaker) {
+    writeCloakers(
+      cloakers.map((l) => {
+        if (l.id !== id) return l;
+        return {
+          ...l,
+          visits: l.visits + 1,
+          humanVisits: isBot ? l.humanVisits : l.humanVisits + 1,
+          botVisits: isBot ? l.botVisits + 1 : l.botVisits,
+        };
+      })
+    );
+  }
 
   // Record access log
   const randomIps = isBot
@@ -264,13 +268,13 @@ export function registerVisit(id: string, simulatedIsBot?: boolean): string | nu
     : ["189.40.12.89", "177.136.24.112", "191.185.34.205", "201.86.15.77"];
   const randomCity = isBot ? "Menlo Park / Data Center" : "São Paulo";
   const reason = isBot
-    ? "ASN 32934 (Facebook/Meta Ads Review Crawler)"
-    : "Residencial Vivo Fibra / Navegador Humano Verificado";
+    ? "ASN 32934 (Facebook/Meta Ads Review Crawler / Acesso Direto)"
+    : "Residencial Vivo Fibra / Tráfego de Anúncio Verificado";
 
   const newLog: CloakerLog = {
     id: Math.random().toString(36).slice(2, 9),
-    cloakerId: cloaker.id,
-    cloakerName: cloaker.name,
+    cloakerId: cloaker?.id || id,
+    cloakerName: cloaker?.name || `Cloaker (${id})`,
     timestamp: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     decision: isBot ? "bot" : "humano",
     reason,
