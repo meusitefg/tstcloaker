@@ -37,12 +37,55 @@ export type CloakerLog = {
 
 const STORAGE_KEY_CLOAKERS = "cloakfy-cloakers";
 const STORAGE_KEY_LOGS = "cloakfy-logs";
+const STORAGE_KEY_DELETED = "cloakfy-deleted";
+
+export function readDeletedIds(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function markAsDeleted(id: string) {
+  if (typeof window === "undefined") return;
+  const deleted = readDeletedIds();
+  if (!deleted.includes(id)) {
+    const next = [...deleted, id];
+    localStorage.setItem(STORAGE_KEY_DELETED, JSON.stringify(next));
+  }
+  fetch(`/api/cloakers/delete/${id}`, { method: "POST" }).catch(() => {});
+}
 
 const DEFAULT_CLOAKERS: Cloaker[] = [];
 
 const listeners = new Set<() => void>();
 let cloakerCache: Cloaker[] | null = null;
 let logCache: CloakerLog[] | null = null;
+
+// Initial server sync on client boot
+if (typeof window !== "undefined") {
+  fetch("/api/cloakers")
+    .then((r) => r.json())
+    .then((data) => {
+      if (data?.cloakers?.length) {
+        const local = readCloakers();
+        const merged = [...local];
+        data.cloakers.forEach((sc: Cloaker) => {
+          const idx = merged.findIndex((m) => m.id === sc.id);
+          if (idx >= 0) {
+            merged[idx] = sc;
+          } else if (!data.deleted?.includes(sc.id) && !readDeletedIds().includes(sc.id)) {
+            merged.push(sc);
+          }
+        });
+        writeCloakers(merged);
+      }
+    })
+    .catch(() => {});
+}
 
 export function readCloakers(): Cloaker[] {
   if (typeof window === "undefined") return DEFAULT_CLOAKERS;
@@ -80,6 +123,12 @@ function writeCloakers(next: Cloaker[]) {
   cloakerCache = next;
   if (typeof window !== "undefined") {
     localStorage.setItem(STORAGE_KEY_CLOAKERS, JSON.stringify(next));
+    // Sync with server store so mobile devices and crawlers can immediately resolve the cloaker
+    fetch("/api/cloakers", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(next),
+    }).catch(() => {});
   }
   listeners.forEach((l) => l());
 }
@@ -207,6 +256,7 @@ export function updateCloaker(id: string, updates: Partial<Cloaker>): void {
 export const updateLink = updateCloaker;
 
 export function removeLink(id: string) {
+  markAsDeleted(id);
   writeCloakers(readCloakers().filter((l) => l.id !== id));
 }
 
