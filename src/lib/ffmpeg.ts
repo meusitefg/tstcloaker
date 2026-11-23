@@ -70,14 +70,16 @@ export class FFmpegClient {
     };
 
     const origin = window.location.origin;
+    const ffmpegBase = (import.meta.env.VITE_FFMPEG_BASE_URL as string | undefined)?.replace(/\/$/, "") || `${origin}/ffmpeg`;
+
     let coreBlobUrl = options?.coreURL;
     let wasmBlobUrl = options?.wasmURL;
 
     if (!coreBlobUrl || !wasmBlobUrl) {
       try {
         const [coreRes, wasmRes] = await Promise.all([
-          fetch(`${origin}/ffmpeg/ffmpeg-core.js`),
-          fetch(`${origin}/ffmpeg/ffmpeg-core.wasm`),
+          fetch(`${ffmpegBase}/ffmpeg-core.js`),
+          fetch(`${ffmpegBase}/ffmpeg-core.wasm`),
         ]);
         if (coreRes.ok && wasmRes.ok) {
           const coreBlob = new Blob([await coreRes.arrayBuffer()], { type: "application/javascript" });
@@ -91,8 +93,8 @@ export class FFmpegClient {
     }
 
     await this.post("LOAD", {
-      coreURL: coreBlobUrl || `${origin}/ffmpeg/ffmpeg-core.js`,
-      wasmURL: wasmBlobUrl || `${origin}/ffmpeg/ffmpeg-core.wasm`,
+      coreURL: coreBlobUrl || `${ffmpegBase}/ffmpeg-core.js`,
+      wasmURL: wasmBlobUrl || `${ffmpegBase}/ffmpeg-core.wasm`,
     });
     this.loaded = true;
   }
