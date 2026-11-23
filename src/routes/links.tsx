@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Copy, Globe, Pause, Play, Trash2, Shield, Eye, Bot, ExternalLink, Zap, Pencil, Check, X } from "lucide-react";
+import { Copy, Globe, Pause, Play, Trash2, Shield, Eye, Bot, ExternalLink, Zap, Pencil, Check, X, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, Empty, NewCloakerButton, PageHeader, Panel } from "@/components/AppShell";
 import { removeLink, shareUrl, toggleLink, useLinks, simulateVisit, addLink } from "@/lib/links";
 import type { Cloaker } from "@/lib/links";
+import { pageTemplates } from "@/lib/page-templates";
 
 export const Route = createFileRoute("/links")({
   head: () => ({
@@ -12,63 +13,90 @@ export const Route = createFileRoute("/links")({
       { title: "Cloakers | Cloakfy" },
       { name: "description", content: "Crie, acompanhe e ajuste a proteção das suas campanhas." },
       { property: "og:title", content: "Cloakers | Cloakfy" },
-      { property: "og:description", content: "Crie, acompanhe e ajuste a proteção das suas campanhas." },
     ],
   }),
   component: CloakersPage,
 });
 
-// Extend links.ts with an updateLink function inline here
-function updateDestination(id: string, newDestination: string) {
-  const { useSyncExternalStore } = require("react");
-  // We'll use localStorage directly since we can't easily re-export private funcs
+function updateCloaker(id: string, updates: Partial<Cloaker>) {
   try {
     const raw = localStorage.getItem("cloakfy-cloakers");
     if (!raw) return;
     const cloakers: Cloaker[] = JSON.parse(raw);
-    const updated = cloakers.map((c) =>
-      c.id === id ? { ...c, destination: newDestination } : c
-    );
+    const updated = cloakers.map((c) => c.id === id ? { ...c, ...updates } : c);
     localStorage.setItem("cloakfy-cloakers", JSON.stringify(updated));
-    // Force re-render via storage event
     window.dispatchEvent(new StorageEvent("storage", { key: "cloakfy-cloakers" }));
   } catch (err) {
-    console.error("Error updating destination:", err);
+    console.error("Error updating cloaker:", err);
   }
 }
+
+type EditMode = "destination" | "full" | null;
 
 function CloakersPage() {
   const cloakers = useLinks();
   const humanVisits = cloakers.reduce((n, l) => n + (l.humanVisits ?? l.visits), 0);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState<EditMode>(null);
   const [editValue, setEditValue] = useState("");
+  // Full edit modal fields
+  const [editName, setEditName] = useState("");
+  const [editDest, setEditDest] = useState("");
+  const [editSafe, setEditSafe] = useState("");
+  const [editSafeTemplate, setEditSafeTemplate] = useState("");
+  const [editCampaign, setEditCampaign] = useState("");
+  const [editMode2, setEditMode2] = useState<"basica" | "normal" | "agressiva">("normal");
 
-  function startEdit(cloaker: Cloaker) {
+  function startQuickEdit(cloaker: Cloaker) {
     setEditingId(cloaker.id);
+    setEditMode("destination");
     setEditValue(cloaker.destination);
   }
 
-  function saveEdit() {
+  function startFullEdit(cloaker: Cloaker) {
+    setEditingId(cloaker.id);
+    setEditMode("full");
+    setEditName(cloaker.name);
+    setEditDest(cloaker.destination);
+    setEditSafe(cloaker.safePage || "");
+    setEditSafeTemplate(cloaker.safeTemplateId || "");
+    setEditCampaign(cloaker.campaign || "");
+    setEditMode2(cloaker.mode || "normal");
+  }
+
+  function saveQuickEdit() {
     if (!editingId || !editValue.trim()) return;
     let url = editValue.trim();
-    if (!url.startsWith("http://") && !url.startsWith("https://")) {
-      url = "https://" + url;
-    }
-    try {
-      new URL(url); // validate
-    } catch {
-      toast.error("URL inválida. Informe um link completo.");
-      return;
-    }
-    updateDestination(editingId, url);
+    if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://" + url;
+    try { new URL(url); } catch { toast.error("URL inválida."); return; }
+    updateCloaker(editingId, { destination: url });
     toast.success("Link da oferta atualizado!");
-    setEditingId(null);
-    setEditValue("");
+    setEditingId(null); setEditMode(null); setEditValue("");
+  }
+
+  function saveFullEdit() {
+    if (!editingId) return;
+    let url = editDest.trim();
+    if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://" + url;
+    try { new URL(url); } catch { toast.error("URL de destino inválida."); return; }
+    const safePageResolved = editSafeTemplate
+      ? `${window.location.origin}/safe/${editSafeTemplate}`
+      : (editSafe.trim() || `${window.location.origin}/safe/bella`);
+    const updates: Partial<Cloaker> = {
+      name: editName.trim() || editName,
+      destination: url,
+      safePage: safePageResolved,
+      campaign: editCampaign.trim(),
+      mode: editMode2,
+    };
+    if (editSafeTemplate) updates.safeTemplateId = editSafeTemplate;
+    updateCloaker(editingId, updates);
+    toast.success("Cloaker atualizado!");
+    setEditingId(null); setEditMode(null);
   }
 
   function cancelEdit() {
-    setEditingId(null);
-    setEditValue("");
+    setEditingId(null); setEditMode(null); setEditValue("");
   }
 
   return (
@@ -79,15 +107,12 @@ function CloakersPage() {
         action={<NewCloakerButton />}
       />
 
-      {/* Plan & Usage KPI Panel */}
+      {/* Plan & Usage */}
       <Panel className="mb-6 grid md:grid-cols-[260px_1fr] bg-[#14171a] border-border">
         <div className="border-b border-border p-6 md:border-r md:border-b-0">
           <p className="text-xs font-medium text-muted-foreground">Seu plano:</p>
           <p className="mt-1 text-2xl font-bold text-white">Grátis</p>
-          <a
-            href="/planos"
-            className="mt-4 inline-block rounded-xl border border-border bg-card/60 px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors"
-          >
+          <a href="/planos" className="mt-4 inline-block rounded-xl border border-border bg-card/60 px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors">
             Fazer upgrade
           </a>
         </div>
@@ -105,87 +130,156 @@ function CloakersPage() {
         </div>
       </Panel>
 
-      {/* Empty State vs List */}
+      {/* Full Edit Modal */}
+      {editMode === "full" && editingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <Panel className="w-full max-w-lg bg-[#14171a] border-border p-0 overflow-hidden">
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Shield className="size-5 text-primary" />
+                <h2 className="text-sm font-bold text-white">Editar Cloaker</h2>
+              </div>
+              <button onClick={cancelEdit} className="grid size-8 place-items-center rounded-lg border border-border text-muted-foreground hover:text-white">
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-white block mb-1.5">Nome do cloaker</label>
+                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary" />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-white block mb-1.5">Link da oferta (black page)</label>
+                <input type="url" value={editDest} onChange={(e) => setEditDest(e.target.value)}
+                  placeholder="https://minhaoferta.com/vendas"
+                  className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary" />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-white block mb-1.5">Página Safe (white page)</label>
+                <select
+                  value={editSafeTemplate}
+                  onChange={(e) => setEditSafeTemplate(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary"
+                >
+                  <option value="">— Usar URL personalizada —</option>
+                  {pageTemplates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+                  ))}
+                </select>
+                {!editSafeTemplate && (
+                  <input
+                    type="url" value={editSafe} onChange={(e) => setEditSafe(e.target.value)}
+                    placeholder="https://minha-pagina-safe.com"
+                    className="mt-2 w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary"
+                  />
+                )}
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-white block mb-1.5">Campanha (UTM)</label>
+                <input type="text" value={editCampaign} onChange={(e) => setEditCampaign(e.target.value)}
+                  placeholder="ex: black-friday-nov24"
+                  className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary" />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-white block mb-2">Modo de proteção</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["basica", "normal", "agressiva"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setEditMode2(m)}
+                      className={`rounded-xl border py-2 text-xs font-semibold capitalize transition-all ${
+                        editMode2 === m
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border bg-card/60 text-muted-foreground hover:text-white"
+                      }`}
+                    >
+                      {m === "basica" ? "Básica" : m === "normal" ? "Normal" : "Agressiva"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end p-5 border-t border-border">
+              <button onClick={cancelEdit} className="rounded-xl border border-border bg-card/60 px-4 py-2.5 text-xs text-muted-foreground hover:text-white">
+                Cancelar
+              </button>
+              <button
+                onClick={saveFullEdit}
+                className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all"
+              >
+                <Check className="size-4" /> Alterar
+              </button>
+            </div>
+          </Panel>
+        </div>
+      )}
+
+      {/* Cloakers List */}
       {cloakers.length === 0 ? (
         <Empty
-          icon={Globe}
           title="Seu primeiro cloaker em 2 minutos"
-          text="Bots e moderadores veem a página segura. Seus leads veem a oferta real. Você só cola o link no anúncio. Você ganha 7 dias grátis."
-          actionLabel="Criar primeira"
+          text="Bots e moderadores veem a página segura. Seus leads veem a oferta real. Você só cola o link no anúncio, você ganha 7 dias grátis."
+          actionLabel="+ Criar primeira"
         />
       ) : (
-        <Panel className="divide-y divide-border bg-[#14171a]">
+        <Panel className="bg-[#14171a] border-border divide-y divide-border">
           {cloakers.map((l) => (
-            <div key={l.id} className="flex flex-col gap-3 px-6 py-5 hover:bg-secondary/10 transition-colors">
-              {/* Row 1: Info + Badges + Actions */}
-              <div className="flex flex-wrap items-center gap-4">
-                {/* Cloaker Info */}
+            <div key={l.id} className="p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <Shield className="size-4 text-primary" />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Shield className="size-4 text-primary shrink-0" />
                     <p className="font-semibold text-white truncate">{l.name}</p>
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    {editingId === l.id ? (
-                      /* Inline edit field */
-                      <div className="flex items-center gap-2 flex-1 min-w-[200px]">
-                        <span className="text-emerald-400 font-mono shrink-0">Oferta Real:</span>
-                        <input
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveEdit();
-                            if (e.key === "Escape") cancelEdit();
-                          }}
-                          className="flex-1 min-w-0 rounded-lg border border-primary bg-[#0d0f10] px-2.5 py-1 text-xs text-white outline-none focus:ring-1 focus:ring-primary font-mono"
-                          autoFocus
-                        />
-                        <button
-                          onClick={saveEdit}
-                          className="grid size-6 place-items-center rounded bg-primary/20 text-primary hover:bg-primary/40 transition-colors"
-                          title="Salvar"
-                        >
-                          <Check className="size-3.5" />
-                        </button>
-                        <button
-                          onClick={cancelEdit}
-                          className="grid size-6 place-items-center rounded bg-secondary text-muted-foreground hover:text-white transition-colors"
-                          title="Cancelar"
-                        >
-                          <X className="size-3.5" />
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-emerald-400 font-mono shrink-0">Oferta Real:</span>
-                        <span className="truncate">{l.destination}</span>
-                        <button
-                          onClick={() => startEdit(l)}
-                          className="shrink-0 p-0.5 text-muted-foreground hover:text-primary transition-colors"
-                          title="Editar link da oferta"
-                        >
-                          <Pencil className="size-3" />
-                        </button>
-                      </span>
-                    )}
-                    <span className="truncate">
-                      <span className="text-blue-400 font-mono">Safe:</span> {l.safePage || "Template Automático"}
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium border ${
+                      l.active
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                        : "bg-secondary text-muted-foreground border-border"
+                    }`}>
+                      {l.active ? "Ativo" : "Pausado"}
+                    </span>
+                    <span className="rounded-full border border-border bg-secondary/40 px-2 py-0.5 text-[11px] text-muted-foreground capitalize">
+                      {l.mode || "normal"}
                     </span>
                   </div>
+
+                  <div className="mt-1.5 text-xs text-muted-foreground">
+                    <span className="font-mono">{shareUrl(l.id)}</span>
+                  </div>
+
+                  {/* Quick destination edit */}
+                  {editMode === "destination" && editingId === l.id ? (
+                    <div className="mt-2 flex items-center gap-2">
+                      <input
+                        type="url"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && saveQuickEdit()}
+                        autoFocus
+                        className="flex-1 rounded-xl border border-primary bg-[#0d0f10] px-3 py-1.5 text-xs text-white outline-none"
+                        placeholder="https://novaoferta.com/vendas"
+                      />
+                      <button onClick={saveQuickEdit} className="grid size-7 place-items-center rounded-lg bg-primary text-primary-foreground hover:brightness-110">
+                        <Check className="size-3.5" />
+                      </button>
+                      <button onClick={cancelEdit} className="grid size-7 place-items-center rounded-lg border border-border text-muted-foreground hover:text-white">
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground/70 truncate max-w-xs">
+                      → {l.destination}
+                    </p>
+                  )}
                 </div>
 
-                {/* Status Badge */}
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    l.active
-                      ? "bg-success-soft text-primary ring-1 ring-primary/20"
-                      : "bg-secondary text-muted-foreground"
-                  }`}
-                >
-                  {l.active ? "Ativo" : "Pausado"}
-                </span>
-
-                {/* Stats Counters */}
+                {/* Stats */}
                 <div className="flex items-center gap-4 text-xs">
                   <div className="text-right">
                     <p className="font-bold text-white text-sm">{l.humanVisits ?? l.visits}</p>
@@ -201,80 +295,55 @@ function CloakersPage() {
                   </div>
                 </div>
 
-                {/* Quick Action Buttons */}
+                {/* Actions */}
                 <div className="flex items-center gap-1.5">
                   <button
                     title="Simular clique humano"
-                    onClick={() => {
-                      simulateVisit(l.id, false);
-                      toast.success("Clique humano simulado! Visita registrada.");
-                    }}
+                    onClick={() => { simulateVisit(l.id, false); toast.success("Clique humano simulado!"); }}
                     className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
                   >
                     <Zap className="size-3" /> +Humano
                   </button>
                   <button
-                    title="Simular bot do Facebook/Google"
-                    onClick={() => {
-                      simulateVisit(l.id, true);
-                      toast.info("Bot simulado! Desviado para página safe.");
-                    }}
+                    title="Simular bot"
+                    onClick={() => { simulateVisit(l.id, true); toast.info("Bot simulado! Desviado para página safe."); }}
                     className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-[11px] font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
                   >
                     <Bot className="size-3" /> +Bot
                   </button>
 
-                  {/* Edit Destination */}
-                  <IconBtn
-                    label="Editar link da oferta"
-                    onClick={() => editingId === l.id ? cancelEdit() : startEdit(l)}
+                  {/* Full edit button — green "Alterar" */}
+                  <button
+                    title="Editar cloaker completo"
+                    onClick={() => startFullEdit(l)}
+                    className="flex items-center gap-1 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition-colors"
                   >
+                    <Settings className="size-3.5" /> Alterar
+                  </button>
+
+                  {/* Quick edit destination */}
+                  <IconBtn label="Editar link da oferta rapidamente" onClick={() => editMode === "destination" && editingId === l.id ? cancelEdit() : startQuickEdit(l)}>
                     <Pencil />
                   </IconBtn>
 
-                  {/* Copy link */}
-                  <IconBtn
-                    label="Copiar link do cloaker"
-                    onClick={async () => {
-                      await navigator.clipboard.writeText(shareUrl(l.id));
-                      toast.success("Link do cloaker copiado!");
-                    }}
-                  >
+                  {/* Copy */}
+                  <IconBtn label="Copiar link do cloaker" onClick={async () => { await navigator.clipboard.writeText(shareUrl(l.id)); toast.success("Link do cloaker copiado!"); }}>
                     <Copy />
                   </IconBtn>
 
-                  {/* Open link */}
-                  <a
-                    href={shareUrl(l.id)}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="Testar link público"
-                    className="grid size-9 place-items-center rounded-xl border border-border bg-card/60 hover:bg-accent text-muted-foreground hover:text-white transition-colors"
-                  >
+                  {/* Open */}
+                  <a href={shareUrl(l.id)} target="_blank" rel="noreferrer" title="Testar link público"
+                    className="grid size-9 place-items-center rounded-xl border border-border bg-card/60 hover:bg-accent text-muted-foreground hover:text-white transition-colors">
                     <ExternalLink className="size-4" />
                   </a>
 
                   {/* Pause/Resume */}
-                  <IconBtn
-                    label={l.active ? "Pausar proteção" : "Ativar proteção"}
-                    onClick={() => {
-                      toggleLink(l.id);
-                      toast.info(l.active ? "Cloaker pausado." : "Cloaker ativado!");
-                    }}
-                  >
+                  <IconBtn label={l.active ? "Pausar proteção" : "Ativar proteção"} onClick={() => { toggleLink(l.id); toast.info(l.active ? "Cloaker pausado." : "Cloaker ativado!"); }}>
                     {l.active ? <Pause /> : <Play />}
                   </IconBtn>
 
                   {/* Delete */}
-                  <IconBtn
-                    label="Excluir cloaker"
-                    onClick={() => {
-                      if (confirm("Deseja realmente remover este cloaker?")) {
-                        removeLink(l.id);
-                        toast.success("Cloaker removido.");
-                      }
-                    }}
-                  >
+                  <IconBtn label="Excluir cloaker" onClick={() => { if (confirm("Deseja realmente remover este cloaker?")) { removeLink(l.id); toast.success("Cloaker removido."); } }}>
                     <Trash2 />
                   </IconBtn>
                 </div>
@@ -287,20 +356,10 @@ function CloakersPage() {
   );
 }
 
-function IconBtn({
-  label,
-  children,
-  onClick,
-}: {
-  label: string;
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
+function IconBtn({ label, children, onClick }: { label: string; children: React.ReactNode; onClick: () => void }) {
   return (
     <button
-      aria-label={label}
-      title={label}
-      onClick={onClick}
+      aria-label={label} title={label} onClick={onClick}
       className="grid size-9 place-items-center rounded-xl border border-border bg-card/60 hover:bg-accent text-muted-foreground hover:text-white transition-colors [&_svg]:size-4"
     >
       {children}

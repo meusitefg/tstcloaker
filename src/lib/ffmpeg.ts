@@ -70,7 +70,7 @@ export class FFmpegClient {
     };
 
     const origin = window.location.origin;
-    const ffmpegBase = (import.meta.env.VITE_FFMPEG_BASE_URL as string | undefined)?.replace(/\/$/, "") || `${origin}/ffmpeg`;
+    const ffmpegBase = (import.meta.env['VITE_FFMPEG_BASE_URL'] as string | undefined)?.replace(/\/$/, "") || `${origin}/ffmpeg`;
 
     let coreBlobUrl = options?.coreURL;
     let wasmBlobUrl = options?.wasmURL;

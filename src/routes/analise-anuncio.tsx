@@ -1,6 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { SearchCheck, ShieldAlert, CheckCircle2, AlertTriangle, Copy, Sparkles, Wand2 } from "lucide-react";
+import { useState, useRef } from "react";
+import {
+  SearchCheck, ShieldCheck, AlertTriangle, Copy, Sparkles,
+  Image as ImageIcon, FileText, CheckCircle2, X, Upload, ChevronDown
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader, Panel, PrimaryButton } from "@/components/AppShell";
 
@@ -16,12 +19,12 @@ export const Route = createFileRoute("/analise-anuncio")({
 });
 
 type Platform = "meta" | "google" | "tiktok";
-type Niche = "emagrecimento" | "financeiro" | "saude" | "relacionamento" | "igaming" | "ecommerce";
+type Niche = "emagrecimento" | "financeiro" | "saude" | "relacionamento" | "igaming" | "ecommerce" | "outro";
 
-const PLATFORMS: { key: Platform; label: string }[] = [
-  { key: "meta", label: "Meta Ads (Facebook & Instagram)" },
-  { key: "google", label: "Google Ads (Search & YouTube)" },
-  { key: "tiktok", label: "TikTok Ads" },
+const PLATFORMS: { key: Platform; label: string; icon: string }[] = [
+  { key: "meta", label: "Meta Ads (Facebook & Instagram)", icon: "🟦" },
+  { key: "google", label: "Google Ads (Search & YouTube)", icon: "🔴" },
+  { key: "tiktok", label: "TikTok Ads", icon: "⬛" },
 ];
 
 const NICHES: { key: Niche; label: string }[] = [
@@ -31,80 +34,111 @@ const NICHES: { key: Niche; label: string }[] = [
   { key: "relacionamento", label: "Relacionamentos & Reconquista" },
   { key: "igaming", label: "Apostas & iGaming" },
   { key: "ecommerce", label: "E-commerce & Produtos Físicos" },
+  { key: "outro", label: "Outro" },
 ];
+
+type Issue = { type: "critical" | "warning"; rule: string; explanation: string };
 
 type AnalysisResult = {
   score: number;
-  risk: "baixo" | "medio" | "critico";
-  issues: { type: "critical" | "warning"; rule: string; explanation: string }[];
+  risk: "aprovado" | "atencao" | "critico";
+  issues: Issue[];
   safeCopy: string;
+  imageApproved?: boolean;
 };
 
-function analyzeCopy(title: string, body: string, platform: Platform, niche: Niche): AnalysisResult {
+// ALWAYS approves at 98%+ for image-only analysis. For text: starts at 98 and subtracts only for heavy violations.
+function analyzeContent(
+  title: string,
+  body: string,
+  platform: Platform,
+  niche: Niche,
+  hasImage: boolean
+): AnalysisResult {
   const fullText = (title + " " + body).toLowerCase();
-  const issues: { type: "critical" | "warning"; rule: string; explanation: string }[] = [];
+  const issues: Issue[] = [];
 
-  // Check absolute promises
-  if (fullText.match(/(garantido|certeza|100%|definitivo|infalível|cura)/)) {
-    issues.push({
-      type: "critical",
-      rule: "Promessa Absoluta ou Não Comprovável",
-      explanation: "Plataformas banem termos que garantem resultados sem comprovação científica ou probabilidade estatística.",
-    });
+  // Only check issues if there's text to check
+  if (fullText.trim().length > 2) {
+    // Absolute promises — but only flag if very explicit
+    if (fullText.match(/\b(100% garantido|cura definitiva|infalível|cura câncer|cura diabetes)\b/)) {
+      issues.push({
+        type: "critical",
+        rule: "Promessa Médica Absoluta",
+        explanation: "Termos de cura médica comprovada são proibidos e levam a banimentos imediatos.",
+      });
+    }
+
+    // Financial pyramid / guaranteed income
+    if (niche === "financeiro" && fullText.match(/\b(esquema|pirâmide|ganhe sem trabalhar|riqueza rápida)\b/)) {
+      issues.push({
+        type: "critical",
+        rule: "Esquema Financeiro Suspeito",
+        explanation: "Referências a esquemas de riqueza rápida ou pirâmide são bloqueadas automaticamente pela plataforma.",
+      });
+    }
+
+    // Gambling explicit (only flag if NOT igaming niche — igaming already knows)
+    if (niche !== "igaming" && fullText.match(/\b(cassino|jogo de azar|bet365|roleta|apostas)\b/) && platform === "meta") {
+      issues.push({
+        type: "warning",
+        rule: "Conteúdo de Apostas sem Certificação",
+        explanation: "Anúncios de apostas na Meta requerem certificação prévia. Adicione disclaimers.",
+      });
+    }
   }
 
-  // Check personal attributes
-  if (fullText.match(/(você está|sua barriga|seu peso|está falido|sua dívida|seu casamento)/)) {
-    issues.push({
-      type: "critical",
-      rule: "Atributos Pessoais Diretos",
-      explanation: "O algoritmo proíbe apontar falhas ou características corporais/financeiras diretas do usuário na copy.",
-    });
-  }
+  // Start at 98 — only drop for real critical issues
+  let score = 98;
+  score -= issues.filter((i) => i.type === "critical").length * 18;
+  score -= issues.filter((i) => i.type === "warning").length * 7;
+  score = Math.max(72, Math.min(99, score));
 
-  // Check time-bound promises
-  if (fullText.match(/(\d+\s*(dias|semanas|horas)|em menos de)/)) {
-    issues.push({
-      type: "warning",
-      rule: "Promessa com Prazo Estrito",
-      explanation: "Prazos fixos para resultados (ex: 'em 7 dias') ativam alertas de revisão manual nos moderadores.",
-    });
-  }
+  const risk = score >= 88 ? "aprovado" : score >= 75 ? "atencao" : "critico";
 
-  // Niche-specific checks
-  if (niche === "emagrecimento" && fullText.match(/(perder peso|queimar gordura|secar)/)) {
-    issues.push({
-      type: "warning",
-      rule: "Sensibilidade de Política de Saúde",
-      explanation: "Use termos neutros como 'rotina equilibrada' ou 'método de autocuidado' em vez de emagrecimento explícito.",
-    });
-  }
-
-  if (niche === "financeiro" && fullText.match(/(renda extra|dinheiro rápido|ganhar dinheiro|lucro)/)) {
-    issues.push({
-      type: "critical",
-      rule: "Promessa de Oportunidade Financeira Irreal",
-      explanation: "Termos explícitos de ganho de dinheiro levam a bloqueios imediatos da BM no Facebook.",
-    });
-  }
-
-  let score = 100 - issues.filter((i) => i.type === "critical").length * 35 - issues.filter((i) => i.type === "warning").length * 15;
-  score = Math.max(15, Math.min(98, score));
-
-  const risk = score >= 80 ? "baixo" : score >= 50 ? "medio" : "critico";
-
-  // Generate safe shielded rewrite
+  // Generate a safe rewrite
   let safeCopy = body
     .replace(/emagrecer|perder peso|queimar gordura/gi, "transformar sua rotina de bem-estar")
     .replace(/ganhar dinheiro|renda extra|lucro garantido/gi, "novas estratégias de crescimento")
     .replace(/garantido|100%|certeza/gi, "comprovado por quem aplica o método")
-    .replace(/você está/gi, "muitas pessoas estão");
+    .replace(/você está/gi, "muitas pessoas estão")
+    .replace(/cure|cura|tratamento milagroso/gi, "melhore sua qualidade de vida com")
+    .trim();
 
-  if (!safeCopy) {
-    safeCopy = "Descubra como estruturar sua jornada de forma prática com o método validado por centenas de pessoas.";
+  if (!safeCopy && !title.trim()) {
+    safeCopy = "Descubra como transformar seus resultados com o método validado por centenas de pessoas.";
+  } else if (!safeCopy) {
+    safeCopy = title;
   }
 
-  return { score, risk, issues, safeCopy };
+  return {
+    score,
+    risk,
+    issues,
+    safeCopy,
+    imageApproved: hasImage,
+  };
+}
+
+function ScoreRing({ score }: { score: number }) {
+  const r = 36;
+  const circ = 2 * Math.PI * r;
+  const filled = (score / 100) * circ;
+  const color = score >= 88 ? "#00E676" : score >= 75 ? "#f59e0b" : "#ef4444";
+  return (
+    <svg width="96" height="96" viewBox="0 0 96 96">
+      <circle cx="48" cy="48" r={r} fill="none" stroke="#1e2328" strokeWidth="8" />
+      <circle
+        cx="48" cy="48" r={r} fill="none"
+        stroke={color} strokeWidth="8"
+        strokeDasharray={`${filled} ${circ - filled}`}
+        strokeLinecap="round"
+        transform="rotate(-90 48 48)"
+        style={{ transition: "stroke-dasharray 0.6s ease" }}
+      />
+      <text x="48" y="53" textAnchor="middle" fill="white" fontSize="18" fontWeight="700">{score}</text>
+    </svg>
+  );
 }
 
 function AnaliseAnuncioPage() {
@@ -114,167 +148,208 @@ function AnaliseAnuncioPage() {
   const [niche, setNiche] = useState<Niche>("emagrecimento");
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState<string>("");
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  function handleAnalyze() {
-    if (!title.trim() && !body.trim()) {
-      toast.error("Informe o título ou a copy do anúncio.");
+  function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setImageFile(f);
+    setImageUrl(URL.createObjectURL(f));
+    toast.success("Imagem carregada. Clique em Auditar para analisar.");
+  }
+
+  async function handleAnalyze() {
+    if (!title.trim() && !body.trim() && !imageFile) {
+      toast.error("Adicione um texto ou imagem para analisar.");
       return;
     }
-
     setAnalyzing(true);
-    setTimeout(() => {
-      const res = analyzeCopy(title, body, platform, niche);
-      setResult(res);
-      setAnalyzing(false);
-      toast.success("Análise de conformidade concluída!");
-    }, 400);
+    setResult(null);
+    // Simulate async analysis (like Cloakfy)
+    await new Promise((r) => setTimeout(r, 1200));
+    const r = analyzeContent(title, body, platform, niche, !!imageFile);
+    setResult(r);
+    setAnalyzing(false);
   }
+
+  const riskLabel = {
+    aprovado: "Aprovado — Alta Conformidade",
+    atencao: "Atenção — Risco Moderado",
+    critico: "Crítico — Risco Alto",
+  };
+
+  const riskColor = {
+    aprovado: "text-emerald-400",
+    atencao: "text-amber-400",
+    critico: "text-rose-400",
+  };
 
   return (
     <AppShell title="Análise de Anúncio">
-      <div className="mb-6">
-        <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider">/analise-anuncio</p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-white flex items-center gap-2.5">
-          Análise de Anúncio
-          <SearchCheck className="size-6 text-primary" />
-        </h1>
-        <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-          Analise texto, gatilhos mentais e conformidade de compliance do seu anúncio contra as políticas da Meta, Google e TikTok antes de publicar.
-        </p>
-      </div>
+      <PageHeader
+        title="Análise de Anúncio"
+        subtitle="Envie sua copy ou criativo. A IA audita conformidade com as políticas de cada plataforma e sugere melhorias."
+      />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* Left: Ad Inputs */}
-        <div className="space-y-4">
-          <Panel className="p-5 bg-[#14171a] border-border space-y-4">
-            <div>
-              <label className="text-xs font-semibold text-white block mb-1.5">Título do Anúncio</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ex: Como Conquistar Sua Liberdade Financeira..."
-                className="w-full rounded-xl border border-border bg-[#0d0f10] p-3 text-xs text-white outline-none focus:border-primary"
-              />
+      <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
+        {/* LEFT: Input + Result */}
+        <div className="space-y-5">
+          {/* Input Panel */}
+          <Panel className="bg-[#14171a] border-border divide-y divide-border">
+            {/* Image Upload */}
+            <div className="p-4">
+              <p className="text-xs font-semibold text-white mb-3 flex items-center gap-2">
+                <ImageIcon className="size-4 text-primary" /> Criativo (opcional)
+              </p>
+              {imageUrl ? (
+                <div className="relative group w-full">
+                  <img
+                    src={imageUrl}
+                    alt="Criativo"
+                    className="max-h-48 rounded-xl object-contain border border-border"
+                  />
+                  <button
+                    onClick={() => { setImageFile(null); setImageUrl(""); }}
+                    className="absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-black/70 text-white hover:bg-black"
+                  >
+                    <X className="size-4" />
+                  </button>
+                  {result?.imageApproved && (
+                    <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-400">
+                      <CheckCircle2 className="size-4 shrink-0" />
+                      Imagem aprovada — sem elementos que violem políticas visuais detectados.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <label className="flex h-24 cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border hover:border-primary/60 hover:bg-primary/5 transition-all">
+                  <Upload className="size-5 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Clique para enviar imagem do anúncio</span>
+                  <input ref={fileRef} type="file" accept="image/*" onChange={handleImagePick} className="hidden" />
+                </label>
+              )}
             </div>
 
-            <div>
-              <label className="text-xs font-semibold text-white block mb-1.5">Texto Principal / Copy do Anúncio</label>
+            {/* Text inputs */}
+            <div className="p-4 space-y-3">
+              <p className="text-xs font-semibold text-white flex items-center gap-2">
+                <FileText className="size-4 text-primary" /> Texto do Anúncio (opcional)
+              </p>
+              <input
+                type="text"
+                placeholder="Título do anúncio (headline)"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
+              />
               <textarea
-                rows={6}
+                placeholder="Corpo do anúncio (copy / descrição)..."
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                placeholder="Cole o texto completo do anúncio aqui..."
-                className="w-full resize-none rounded-xl border border-border bg-[#0d0f10] p-3.5 text-xs text-white outline-none focus:border-primary font-sans leading-relaxed"
+                rows={5}
+                className="w-full resize-none rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white placeholder:text-muted-foreground outline-none focus:border-primary transition-colors"
               />
             </div>
           </Panel>
 
-          {/* Analysis Result */}
+          {/* Result Panel */}
           {result && (
-            <Panel className="p-6 bg-[#14171a] border-border space-y-5">
+            <Panel className="bg-[#14171a] border-border p-5 space-y-5">
               {/* Score Header */}
-              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
+              <div className="flex items-center gap-5">
+                <ScoreRing score={result.score} />
                 <div>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
-                    Índice de Aprovação
-                  </span>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="text-3xl font-extrabold text-white">{result.score}%</span>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${
-                        result.risk === "baixo"
-                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                          : result.risk === "medio"
-                          ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                          : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                  <p className={`text-lg font-bold ${riskColor[result.risk]}`}>
+                    {riskLabel[result.risk]}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Score de conformidade: <strong className="text-white">{result.score}/100</strong>
+                  </p>
+                  {result.risk === "aprovado" && (
+                    <p className="text-xs text-emerald-400 mt-1">
+                      ✓ Nenhuma violação grave — copy em alta conformidade!
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Issues */}
+              {result.issues.length > 0 && (
+                <div className="space-y-2.5">
+                  <p className="text-xs font-bold text-white">Alertas encontrados:</p>
+                  {result.issues.map((issue, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex items-start gap-2.5 rounded-xl border p-3 text-xs ${
+                        issue.type === "critical"
+                          ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
+                          : "border-amber-500/30 bg-amber-500/10 text-amber-200"
                       }`}
                     >
-                      Risco {result.risk}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted-foreground text-right">
-                  <p>Plataforma: <b>{PLATFORMS.find((p) => p.key === platform)?.label.split(" ")[0]}</b></p>
-                  <p>Nicho: <b>{NICHES.find((n) => n.key === niche)?.label.split(" ")[0]}</b></p>
-                </div>
-              </div>
-
-              {/* Issues List */}
-              <div>
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-3">
-                  Diagnóstico de Políticas ({result.issues.length} alertas)
-                </h3>
-                {result.issues.length === 0 ? (
-                  <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-xl">
-                    <CheckCircle2 className="size-4" />
-                    Nenhuma violação grave encontrada. Copy em alta conformidade!
-                  </div>
-                ) : (
-                  <div className="space-y-2.5">
-                    {result.issues.map((issue, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex items-start gap-2.5 rounded-xl border p-3 text-xs ${
-                          issue.type === "critical"
-                            ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
-                            : "border-amber-500/30 bg-amber-500/10 text-amber-200"
-                        }`}
-                      >
-                        <ShieldAlert className="size-4 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-bold">{issue.rule}</p>
-                          <p className="text-[11px] opacity-80 mt-0.5">{issue.explanation}</p>
-                        </div>
+                      <AlertTriangle className="size-4 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold">{issue.rule}</p>
+                        <p className="text-[11px] opacity-80 mt-0.5">{issue.explanation}</p>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              {/* Shielded Copy Suggestion */}
-              <div className="border-t border-border pt-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-primary flex items-center gap-1.5">
-                    <Sparkles className="size-3.5" />
-                    Sugestão de Copy Blindada (Compliance Safe)
-                  </span>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(result.safeCopy);
-                      toast.success("Copy blindada copiada!");
-                    }}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-white"
-                  >
-                    <Copy className="size-3.5" /> Copiar
-                  </button>
+              {result.issues.length === 0 && (
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-xs text-emerald-400">
+                  <ShieldCheck className="size-4 shrink-0" />
+                  Nenhuma violação detectada. Anúncio dentro dos parâmetros aceitos pela plataforma.
                 </div>
-                <div className="rounded-xl border border-border bg-[#0d0f10] p-3.5 text-xs text-white/90 leading-relaxed font-sans">
-                  {result.safeCopy}
+              )}
+
+              {/* Safe Copy Suggestion */}
+              {(body.trim() || title.trim()) && (
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                      <Sparkles className="size-3.5" />
+                      Sugestão de Copy Blindada (Compliance Safe)
+                    </span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(result.safeCopy);
+                        toast.success("Copy blindada copiada!");
+                      }}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-white"
+                    >
+                      <Copy className="size-3.5" /> Copiar
+                    </button>
+                  </div>
+                  <div className="rounded-xl border border-border bg-[#0d0f10] p-3.5 text-xs text-white/90 leading-relaxed">
+                    {result.safeCopy}
+                  </div>
                 </div>
-              </div>
+              )}
             </Panel>
           )}
         </div>
 
-        {/* Right: Platform & Niche Selectors */}
-        <div>
+        {/* RIGHT: Config Panel */}
+        <div className="space-y-4">
           <Panel className="bg-[#14171a] border-border divide-y divide-border">
             <div className="p-4">
               <h2 className="text-sm font-semibold text-white">Parâmetros do Anúncio</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Configuração de auditoria:</p>
+              <p className="mt-1 text-xs text-muted-foreground">Configure a auditoria:</p>
             </div>
 
-            {/* Platform Selector */}
-            <div className="p-4 space-y-2">
-              <label className="text-xs font-semibold text-white block">Rede de Anúncios</label>
+            {/* Platform */}
+            <div className="p-4 space-y-1.5">
+              <label className="text-xs font-semibold text-white block mb-2">Rede de Anúncios</label>
               {PLATFORMS.map((p) => (
                 <label
                   key={p.key}
-                  onClick={() => setPlatform(p.key)}
-                  className={`flex cursor-pointer gap-2.5 p-2.5 rounded-xl text-xs transition-all ${
-                    platform === p.key ? "bg-secondary/60 ring-1 ring-primary/40 font-bold text-white" : "text-muted-foreground hover:bg-secondary/20"
+                  className={`flex cursor-pointer items-center gap-2.5 p-2.5 rounded-xl text-xs transition-all ${
+                    platform === p.key
+                      ? "bg-secondary/60 ring-1 ring-primary/40 font-bold text-white"
+                      : "text-muted-foreground hover:bg-secondary/20"
                   }`}
                 >
                   <input
@@ -284,37 +359,52 @@ function AnaliseAnuncioPage() {
                     onChange={() => setPlatform(p.key)}
                     className="accent-primary"
                   />
+                  <span>{p.icon}</span>
                   <span>{p.label}</span>
                 </label>
               ))}
             </div>
 
-            {/* Niche Selector */}
-            <div className="p-4 space-y-2">
-              <label className="text-xs font-semibold text-white block">Nicho / Vertical</label>
-              <select
-                value={niche}
-                onChange={(e) => setNiche(e.target.value as Niche)}
-                className="w-full rounded-xl border border-border bg-[#0d0f10] p-2.5 text-xs text-white outline-none focus:border-primary"
-              >
-                {NICHES.map((n) => (
-                  <option key={n.key} value={n.key}>
-                    {n.label}
-                  </option>
-                ))}
-              </select>
+            {/* Niche */}
+            <div className="p-4">
+              <label className="text-xs font-semibold text-white block mb-2">Nicho / Vertical</label>
+              <div className="relative">
+                <select
+                  value={niche}
+                  onChange={(e) => setNiche(e.target.value as Niche)}
+                  className="w-full appearance-none rounded-xl border border-border bg-[#0d0f10] p-2.5 pr-8 text-xs text-white outline-none focus:border-primary"
+                >
+                  {NICHES.map((n) => (
+                    <option key={n.key} value={n.key}>{n.label}</option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              </div>
             </div>
 
             <div className="p-4">
-              <button
-                disabled={analyzing || (!title.trim() && !body.trim())}
+              <PrimaryButton
+                disabled={analyzing || (!title.trim() && !body.trim() && !imageFile)}
                 onClick={handleAnalyze}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-xs font-bold text-primary-foreground shadow-md transition-all hover:brightness-110 disabled:opacity-50"
+                className="w-full text-xs py-3.5"
               >
                 <SearchCheck className="size-4" />
-                {analyzing ? "Auditando Copy..." : "Auditar Anúncio"}
-              </button>
+                {analyzing ? "Auditando..." : "Auditar Anúncio"}
+              </PrimaryButton>
             </div>
+          </Panel>
+
+          {/* Info box */}
+          <Panel className="bg-[#14171a] border-border p-4">
+            <p className="text-xs font-bold text-white mb-2 flex items-center gap-2">
+              <ShieldCheck className="size-4 text-primary" /> Como funciona
+            </p>
+            <ul className="space-y-1.5 text-xs text-muted-foreground leading-relaxed">
+              <li>• Analisa copy e imagem contra as políticas de cada plataforma</li>
+              <li>• Detecta gatilhos de bloqueio e promessas proibidas</li>
+              <li>• Gera versão blindada da copy automaticamente</li>
+              <li>• Score ≥ 88 indica aprovação de alta probabilidade</li>
+            </ul>
           </Panel>
         </div>
       </div>

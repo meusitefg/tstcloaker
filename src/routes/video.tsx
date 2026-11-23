@@ -1,87 +1,81 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Download, ImagePlus, Scissors, Video, ShieldCheck, Check, Sparkles, X, FileVideo, Cpu } from "lucide-react";
+import { Download, ImagePlus, Scissors, Video, ShieldCheck, X, Cpu } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader, Panel } from "@/components/AppShell";
 
 export const Route = createFileRoute("/video")({
   head: () => ({
     meta: [
-      { title: "Camuflar Vídeo (FFmpeg MP4) | Cloakfy" },
-      { name: "description", content: "Camufle vídeos limpando metadados, alterando a impressão digital e convertendo para MP4 via FFmpeg." },
-      { property: "og:title", content: "Camuflar Vídeo (FFmpeg MP4) | Cloakfy" },
-      { property: "og:description", content: "Camufle vídeos limpando metadados, alterando a impressão digital e convertendo para MP4 via FFmpeg." },
+      { title: "Camuflar Vídeo | Cloakfy" },
+      { name: "description", content: "Camufle vídeos com recodificação, mistura de capa e mudança de impressão digital." },
+      { property: "og:title", content: "Camuflar Vídeo | Cloakfy" },
     ],
   }),
   component: VideoCloaker,
 });
 
 type CloakingMode = "basica" | "normal" | "agressiva";
-type OutputFormat = "mp4" | "webm";
-
-// Dynamic FFmpeg WebAssembly loader (Single-threaded 0.11.x works in all browsers without SharedArrayBuffer headers)
-async function loadFFmpegLib() {
-  if (typeof window === "undefined") return null;
-  if ((window as any).FFmpeg) return (window as any).FFmpeg;
-
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js";
-    script.async = true;
-    script.onload = () => resolve((window as any).FFmpeg);
-    script.onerror = () => {
-      // Fallback CDN if unpkg has network issues
-      const fallback = document.createElement("script");
-      fallback.src = "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js";
-      fallback.async = true;
-      fallback.onload = () => resolve((window as any).FFmpeg);
-      fallback.onerror = reject;
-      document.head.appendChild(fallback);
-    };
-    document.head.appendChild(script);
-  });
-}
 
 function VideoCloaker() {
   const [files, setFiles] = useState<File[]>([]);
   const [coverUrl, setCoverUrl] = useState<string>("");
+  const [coverLoaded, setCoverLoaded] = useState(false);
   const [mode, setMode] = useState<CloakingMode>("normal");
-  const [format, setFormat] = useState<OutputFormat>("mp4");
+  const [coverBlend, setCoverBlend] = useState(5);
   const [processing, setProcessing] = useState(false);
   const [statusText, setStatusText] = useState("");
   const [progress, setProgress] = useState(0);
   const [outputBlobUrl, setOutputBlobUrl] = useState<string>("");
   const [downloadName, setDownloadName] = useState("");
-  const [isMp4Output, setIsMp4Output] = useState(true);
+  const coverImgRef = useRef<HTMLImageElement | null>(null);
 
   useEffect(() => {
     return () => {
       if (outputBlobUrl) URL.revokeObjectURL(outputBlobUrl);
       if (coverUrl) URL.revokeObjectURL(coverUrl);
     };
-  }, [outputBlobUrl, coverUrl]);
+  }, []);
 
   function handleVideoPick(e: React.ChangeEvent<HTMLInputElement>) {
     if (!e.target.files?.length) return;
     const newFiles = Array.from(e.target.files).slice(0, 20);
     setFiles(newFiles);
+    // Reset output but DO NOT reset processing — let the button handle it
     setOutputBlobUrl("");
-    toast.success(`${newFiles.length} vídeo(s) pronto(s) para camuflagem.`);
+    setStatusText("");
+    setProgress(0);
+    toast.success(`${newFiles.length} vídeo(s) prontos para camuflagem.`);
   }
 
   function handleCoverPick(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
-    if (f) {
-      setCoverUrl(URL.createObjectURL(f));
-      toast.info("Imagem de capa selecionada.");
-    }
+    if (!f) return;
+    if (coverUrl) URL.revokeObjectURL(coverUrl);
+    const url = URL.createObjectURL(f);
+    setCoverUrl(url);
+    setCoverLoaded(false);
+    const img = new Image();
+    img.onload = () => { coverImgRef.current = img; setCoverLoaded(true); };
+    img.src = url;
+    toast.info("Imagem de capa selecionada.");
+  }
+
+  function removeCover() {
+    if (coverUrl) URL.revokeObjectURL(coverUrl);
+    setCoverUrl("");
+    setCoverLoaded(false);
+    coverImgRef.current = null;
   }
 
   async function processVideo() {
     if (!files.length) return;
     const file = files[0]!;
+
+    // Always fully reset state before processing
     setProcessing(true);
     setProgress(5);
+    setOutputBlobUrl("");
     setStatusText("Iniciando recodificação...");
 
     try {
@@ -90,41 +84,45 @@ function VideoCloaker() {
       video.src = srcVideoUrl;
       video.muted = true;
       video.playsInline = true;
+      video.crossOrigin = "anonymous";
 
-      await new Promise((resolve, reject) => {
-        video.onloadedmetadata = resolve;
-        video.onerror = reject;
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("Falha ao carregar vídeo"));
+        setTimeout(() => reject(new Error("Timeout ao carregar vídeo")), 15000);
       });
 
       const width = video.videoWidth || 1080;
       const height = video.videoHeight || 1920;
+      setStatusText("Preparando canvas...");
+      setProgress(15);
 
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+      const ctx = canvas.getContext("2d")!;
 
-      // Load cover if provided
-      let coverImg: HTMLImageElement | null = null;
-      if (coverUrl) {
-        coverImg = new Image();
-        coverImg.src = coverUrl;
-        await new Promise((r) => (coverImg!.onload = r));
-      }
+      const coverImg = coverImgRef.current;
+
+      // Try to capture audio from the video element
+      let audioTracks: MediaStreamTrack[] = [];
+      try {
+        const vs = (video as any).captureStream?.();
+        if (vs) audioTracks = vs.getAudioTracks();
+      } catch { /* no audio */ }
 
       const stream = canvas.captureStream(30);
-      const audioTracks = (video as any).captureStream?.()?.getAudioTracks() || [];
-      audioTracks.forEach((t: any) => stream.addTrack(t));
+      audioTracks.forEach((t) => stream.addTrack(t));
 
-      const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-        ? "video/webm;codecs=vp9"
-        : "video/webm";
-
-      const bitrateMap = {
+      const bitrateMap: Record<CloakingMode, number> = {
         basica: 3200000,
         normal: 2400000,
         agressiva: 1800000,
       };
+
+      const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9"
+        : "video/webm";
 
       const recorder = new MediaRecorder(stream, {
         mimeType,
@@ -132,434 +130,240 @@ function VideoCloaker() {
       });
 
       const chunks: Blob[] = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-      };
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
 
-      const duration = video.duration || 5;
+      setStatusText("Recodificando...");
+      setProgress(25);
 
-      const webmPromise = new Promise<Blob>((resolve) => {
-        recorder.onstop = () => {
-          const finalWebmBlob = new Blob(chunks, { type: "video/webm" });
-          resolve(finalWebmBlob);
-        };
-      });
+      await new Promise<void>((resolve, reject) => {
+        recorder.onstop = () => resolve();
+        recorder.onerror = (ev) => reject(ev);
+        recorder.start(100);
 
-      recorder.start();
-      await video.play();
+        video.currentTime = 0;
+        video.play().catch(() => {});
 
-      let animationId = 0;
-      const renderFrame = () => {
-        if (video.currentTime >= duration || video.ended) {
-          cancelAnimationFrame(animationId);
-          video.pause();
-          recorder.stop();
-          return;
-        }
+        const coverAlpha = coverImg ? Math.min(0.55, (coverBlend / 10) * 0.55) : 0;
 
-        ctx.drawImage(video, 0, 0, width, height);
+        function drawFrame() {
+          if (video.paused || video.ended) {
+            if (recorder.state === "recording") recorder.stop();
+            return;
+          }
+          ctx.drawImage(video, 0, 0, width, height);
 
-        // Micro-noise pixel injection (changes MD5/SHA256 fingerprint)
-        if (mode === "normal" || mode === "agressiva") {
-          ctx.fillStyle = `rgba(0, 230, 118, ${mode === "agressiva" ? 0.007 : 0.003})`;
-          ctx.fillRect(0, 0, width, height);
-        }
-
-        // Blend cover subliminally if provided
-        if (coverImg) {
-          const coverAlpha = mode === "basica" ? 0.015 : mode === "normal" ? 0.03 : 0.06;
-          ctx.globalAlpha = coverAlpha;
-          ctx.drawImage(coverImg, 0, 0, width, height);
-          ctx.globalAlpha = 1.0;
-        }
-
-        const pct = Math.round((video.currentTime / duration) * (format === "mp4" ? 60 : 95));
-        setProgress(pct);
-        setStatusText(`Camuflando quadros... ${Math.round((video.currentTime / duration) * 100)}%`);
-        animationId = requestAnimationFrame(renderFrame);
-      };
-
-      animationId = requestAnimationFrame(renderFrame);
-
-      const webmBlob = await webmPromise;
-      URL.revokeObjectURL(srcVideoUrl);
-
-      const randomHash = Math.random().toString(36).substring(2, 9);
-      const cleanBaseName = file.name.replace(/\.[^.]+$/, "");
-
-      if (format === "mp4") {
-        setStatusText("Carregando motor FFmpeg WebAssembly...");
-        setProgress(70);
-
-        try {
-          const FFmpegLib = await loadFFmpegLib();
-          if (!FFmpegLib) throw new Error("FFmpeg não disponível");
-
-          const { createFFmpeg, fetchFile } = FFmpegLib;
-          const ffmpeg = createFFmpeg({
-            log: false,
-            corePath: "https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js",
-          });
-
-          if (!ffmpeg.isLoaded()) {
-            await ffmpeg.load();
+          if (coverImg && coverBlend > 0) {
+            ctx.globalAlpha = coverAlpha;
+            const cs = Math.max(width / coverImg.width, height / coverImg.height);
+            const cdx = (width - coverImg.width * cs) / 2;
+            const cdy = (height - coverImg.height * cs) / 2;
+            ctx.drawImage(coverImg, cdx, cdy, coverImg.width * cs, coverImg.height * cs);
+            ctx.globalAlpha = 1;
           }
 
-          setStatusText("FFmpeg convertendo para MP4 (H.264 / AAC)...");
-          setProgress(85);
+          // Anti-fingerprint pixel
+          if (mode !== "basica") {
+            ctx.fillStyle = `rgba(0,230,118,${mode === "agressiva" ? 0.012 : 0.006})`;
+            ctx.fillRect(0, 0, 2, 2);
+          }
 
-          ffmpeg.FS("writeFile", "input.webm", await fetchFile(webmBlob));
-
-          await ffmpeg.run(
-            "-i",
-            "input.webm",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-crf",
-            "25",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-movflags",
-            "+faststart",
-            "output.mp4"
-          );
-
-          const mp4Data = ffmpeg.FS("readFile", "output.mp4");
-          const mp4Blob = new Blob([mp4Data.buffer], { type: "video/mp4" });
-          const mp4Url = URL.createObjectURL(mp4Blob);
-
-          setDownloadName(`cloakfy_${cleanBaseName}_${randomHash}.mp4`);
-          setOutputBlobUrl(mp4Url);
-          setIsMp4Output(true);
-          setProgress(100);
-          setProcessing(false);
-          toast.success("Vídeo camuflado e exportado com FFmpeg em MP4 com sucesso!");
-        } catch (ffmpegErr) {
-          console.warn("Falha no FFmpeg wasm, baixando WebM camuflado:", ffmpegErr);
-          const webmUrl = URL.createObjectURL(webmBlob);
-          setDownloadName(`cloakfy_${cleanBaseName}_${randomHash}.webm`);
-          setOutputBlobUrl(webmUrl);
-          setIsMp4Output(false);
-          setProgress(100);
-          setProcessing(false);
-          toast.info("Vídeo camuflado exportado em WebM.");
+          const progVal = Math.min(90, 25 + (video.currentTime / (video.duration || 1)) * 65);
+          setProgress(Math.round(progVal));
+          requestAnimationFrame(drawFrame);
         }
-      } else {
-        const webmUrl = URL.createObjectURL(webmBlob);
-        setDownloadName(`cloakfy_${cleanBaseName}_${randomHash}.webm`);
-        setOutputBlobUrl(webmUrl);
-        setIsMp4Output(false);
-        setProgress(100);
-        setProcessing(false);
-        toast.success("Vídeo camuflado com sucesso!");
-      }
+
+        video.onplay = () => requestAnimationFrame(drawFrame);
+        video.onended = () => { if (recorder.state === "recording") recorder.stop(); };
+      });
+
+      setStatusText("Finalizando arquivo...");
+      setProgress(95);
+
+      const blob = new Blob(chunks, { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      const name = `cloakfy_video_${mode}_${Math.random().toString(36).slice(2, 7)}.webm`;
+
+      setOutputBlobUrl(blobUrl);
+      setDownloadName(name);
+      setProgress(100);
+      setStatusText("Concluído!");
+      toast.success("Vídeo camuflado com sucesso!");
+      URL.revokeObjectURL(srcVideoUrl);
     } catch (err) {
       console.error(err);
+      toast.error("Erro ao processar vídeo. Tente novamente.");
+    } finally {
+      // Always reset processing state so user can click again
       setProcessing(false);
-      toast.error("Ocorreu um erro ao processar o vídeo. Tente outro arquivo.");
+      setProgress(0);
+      setStatusText("");
     }
   }
 
+  const coverBlendPct = Math.round((coverBlend / 10) * 55);
+  const coverBlendLabel =
+    coverBlend === 0 ? "Sem capa" :
+    coverBlend <= 3 ? `${coverBlendPct}% — discreta` :
+    coverBlend <= 6 ? `${coverBlendPct}% — equilibrada` :
+    `${coverBlendPct}% — dominante`;
+
   return (
     <AppShell title="Camuflar Vídeo">
-      {/* Header with badge matching Screenshot 1 */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-            Camuflar Vídeo
-            <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-xs font-semibold text-emerald-400">
-              FFmpeg MP4 Ativo
-            </span>
-          </h1>
-          <p className="mt-1.5 max-w-3xl text-xs text-muted-foreground leading-relaxed">
-            Envie seus vídeos, opcionalmente uma imagem de capa (misturada em cada quadro) e o modo de camuflagem. Agora com conversão nativa para MP4 via FFmpeg WebAssembly direto no navegador.
-          </p>
-        </div>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-[#14171a] px-3.5 py-1.5 text-xs text-muted-foreground">
-          <span className="size-1.5 rounded-full bg-primary" />
-          <b className="text-white">Plano Grátis</b> · ferramenta incluída
-        </span>
-      </div>
+      <PageHeader
+        title="Camuflar Vídeo"
+        subtitle="Recodifique seus vídeos, misture uma imagem de capa e altere a impressão digital. Envie seus vídeos, opcionalmente uma imagem de capa e o modo de camuflagem."
+      />
 
-      <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
-        {/* Left Column: Uploads - Matching Screenshot 1 */}
-        <div className="space-y-6">
-          {/* Vídeos (0/20) */}
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-white">
-              Vídeos <span className="font-normal text-muted-foreground">({files.length}/20)</span>
-            </h2>
+      <div className="grid gap-8 lg:grid-cols-[1fr_360px]">
+        {/* LEFT: Upload + Preview */}
+        <div className="space-y-4">
+          {/* Video Upload */}
+          <label className="flex h-52 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-[#14171a] text-xs font-medium text-muted-foreground hover:border-primary/60 hover:text-white transition-all">
+            <div className="grid size-12 place-items-center rounded-xl bg-secondary text-primary">
+              <Video className="size-6" />
+            </div>
+            <span>Clique ou arraste para enviar vídeos (máx. 20)</span>
+            {files.length > 0 && (
+              <span className="text-primary font-semibold">{files.length} vídeo(s) selecionado(s)</span>
+            )}
+            <input type="file" accept="video/*" multiple onChange={handleVideoPick} className="hidden" />
+          </label>
 
-            {files.length === 0 ? (
-              <label
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  if (e.dataTransfer.files) {
-                    setFiles(Array.from(e.dataTransfer.files).slice(0, 20));
-                  }
-                }}
-                className="flex h-56 cursor-pointer flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border bg-[#14171a] text-xs text-muted-foreground transition-all hover:border-primary/60 hover:text-white"
-              >
-                <Video className="size-6 text-muted-foreground" />
-                <span className="font-medium">Clique ou arraste para enviar vídeos (máx. 20)</span>
-                <span className="text-[11px] text-muted-foreground">Compatível com MP4, MOV, WebM, AVI</span>
-                <input
-                  type="file"
-                  accept="video/*"
-                  multiple
-                  onChange={handleVideoPick}
-                  className="hidden"
-                />
-              </label>
-            ) : (
-              <Panel className="p-4 bg-[#14171a] border-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold text-white">
-                    {files.length} arquivo(s) na fila de camuflagem
-                  </span>
+          {/* File List */}
+          {files.length > 0 && (
+            <Panel className="bg-[#14171a] border-border divide-y divide-border">
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center justify-between px-4 py-2.5 text-xs">
+                  <span className="text-white truncate max-w-[200px]">{f.name}</span>
+                  <span className="text-muted-foreground">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                </div>
+              ))}
+            </Panel>
+          )}
+
+          {/* Cover image */}
+          <Panel className="bg-[#14171a] border-border p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs font-semibold text-white flex items-center gap-2">
+                <ImagePlus className="size-4 text-primary" /> Imagem de capa (opcional)
+              </p>
+            </div>
+            {coverUrl ? (
+              <div>
+                {/* Preview: overlay simulation */}
+                <div className="relative overflow-hidden rounded-xl border border-border bg-black h-40">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Video className="size-10 text-white/20" />
+                  </div>
+                  <img
+                    src={coverUrl}
+                    alt="Capa"
+                    className="absolute inset-0 w-full h-full object-cover transition-opacity"
+                    style={{ opacity: Math.min(0.95, (coverBlend / 10) * 0.95) }}
+                  />
                   <button
-                    onClick={() => {
-                      setFiles([]);
-                      setOutputBlobUrl("");
-                    }}
-                    className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+                    onClick={removeCover}
+                    className="absolute top-2 right-2 grid size-7 place-items-center rounded-full bg-black/70 text-white hover:bg-black z-10"
                   >
-                    Remover todos
+                    <X className="size-3.5" />
                   </button>
                 </div>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {files.map((f, i) => (
-                    <div
-                      key={f.name + i}
-                      className="flex items-center justify-between rounded-lg bg-[#0d0f10] border border-border px-3 py-2 text-xs"
-                    >
-                      <span className="truncate text-white font-mono">{f.name}</span>
-                      <span className="text-[11px] text-muted-foreground shrink-0 ml-2">
-                        {(f.size / (1024 * 1024)).toFixed(1)} MB
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </Panel>
-            )}
-          </div>
 
-          {/* Imagem de capa (opcional) */}
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-white">Imagem de capa (opcional)</h2>
-            {coverUrl ? (
-              <Panel className="p-4 bg-[#14171a] border-border relative">
-                <button
-                  onClick={() => setCoverUrl("")}
-                  className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-black/70 text-white hover:bg-black"
-                >
-                  <X className="size-4" />
-                </button>
-                <img src={coverUrl} alt="Capa" className="max-h-44 rounded-lg object-contain" />
-                <p className="mt-2 text-xs text-muted-foreground">
-                  A capa será misturada subliminarmente em cada quadro para descaracterizar o hash do criativo.
-                </p>
-              </Panel>
+                {/* Blend Slider */}
+                <div className="mt-3 space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Sobreposição da capa</span>
+                    <span className="text-primary font-mono font-bold">{coverBlendLabel}</span>
+                  </div>
+                  <input
+                    type="range" min={0} max={10} step={1} value={coverBlend}
+                    onChange={(e) => setCoverBlend(Number(e.target.value))}
+                    className="w-full h-2 cursor-pointer appearance-none rounded-full bg-secondary accent-primary"
+                  />
+                  <div className="flex justify-between text-[11px] text-muted-foreground">
+                    <span>Sem capa</span><span>Capa domina</span>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <label className="flex h-36 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-[#14171a] text-xs text-muted-foreground transition-all hover:border-primary/60 hover:text-white">
-                <ImagePlus className="size-5 text-muted-foreground" />
-                <span className="font-medium">Clique para selecionar uma capa</span>
+              <label className="flex h-16 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-border hover:border-primary/60 transition-all text-xs text-muted-foreground">
+                <ImagePlus className="size-4" /> Clique para adicionar imagem de capa
                 <input type="file" accept="image/*" onChange={handleCoverPick} className="hidden" />
               </label>
             )}
-          </div>
+          </Panel>
 
-          {/* Progress Bar while running */}
+          {/* Progress */}
           {processing && (
-            <Panel className="p-5 bg-[#14171a] border-primary/40 ring-1 ring-primary/20">
-              <div className="flex items-center justify-between text-xs mb-2">
-                <span className="font-semibold text-white flex items-center gap-2">
-                  <Cpu className="size-4 animate-spin text-primary" />
-                  {statusText}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground flex items-center gap-2">
+                  <Cpu className="size-4 text-primary animate-pulse" /> {statusText}
                 </span>
-                <span className="font-mono text-primary font-bold">{progress}%</span>
+                <span className="text-primary font-bold">{progress}%</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
                 <div
-                  className="h-full bg-primary transition-all duration-300"
+                  className="h-full rounded-full bg-primary transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 />
               </div>
-            </Panel>
+            </div>
           )}
 
-          {/* Result Player / Download */}
+          {/* Download */}
           {outputBlobUrl && (
-            <Panel className="p-5 bg-[#14171a] border-primary/40 ring-1 ring-primary/20">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 text-primary font-semibold text-xs">
-                  <ShieldCheck className="size-4" />
-                  Vídeo camuflado ({isMp4Output ? "Formato MP4 H.264" : "Formato WebM"})
-                </div>
-                <span className="rounded-full bg-primary/10 border border-primary/30 px-2 py-0.5 text-[10px] font-bold text-primary">
-                  HASH RENOVADO
-                </span>
+            <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+              <ShieldCheck className="size-5 text-emerald-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-emerald-400">Vídeo camuflado pronto!</p>
+                <p className="text-[11px] text-muted-foreground truncate">{downloadName}</p>
               </div>
-              <video
-                src={outputBlobUrl}
-                controls
-                className="max-h-72 w-full rounded-xl bg-black"
-              />
               <a
                 href={outputBlobUrl}
                 download={downloadName}
-                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-xs font-bold text-primary-foreground shadow-md transition-all hover:brightness-110"
+                className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all"
               >
-                <Download className="size-4 stroke-[2.5]" />
-                Baixar vídeo camuflado ({downloadName})
+                <Download className="size-4" /> Baixar
               </a>
-            </Panel>
+            </div>
           )}
         </div>
 
-        {/* Right Column: Modo de Camuflagem & Formato - Matching Screenshot 1 */}
-        <div className="space-y-6">
-          {/* Formato de Exportação */}
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-white">Formato de Saída</h2>
-            <Panel className="bg-[#14171a] border-border divide-y divide-border">
+        {/* RIGHT: Mode */}
+        <div>
+          <h2 className="mb-2 text-sm font-semibold text-white">Modo de camuflagem</h2>
+          <Panel className="bg-[#14171a] border-border divide-y divide-border">
+            {(
+              [
+                { key: "basica" as CloakingMode, label: "Básica", desc: "Recodifica o vídeo e limpa os metadados, mudando a impressão digital do arquivo. A capa, se enviada, entra bem discreta." },
+                { key: "normal" as CloakingMode, label: "Normal", desc: "Recodificação mais forte (bitrate menor) para mudar mais a impressão digital. A capa, se enviada, fica um pouco mais presente." },
+                { key: "agressiva" as CloakingMode, label: "Agressiva", desc: "Recodificação máxima para a maior mudança de impressão digital, com leve custo de qualidade. A capa, se enviada, fica mais visível." },
+              ] as const
+            ).map((m) => (
               <label
-                onClick={() => setFormat("mp4")}
-                className={`flex cursor-pointer gap-3 p-4 transition-colors ${
-                  format === "mp4" ? "bg-secondary/40" : "hover:bg-secondary/20"
-                }`}
+                key={m.key}
+                className={`flex cursor-pointer gap-3 p-5 transition-colors ${mode === m.key ? "bg-secondary/40" : "hover:bg-secondary/20"}`}
               >
-                <input
-                  type="radio"
-                  name="outputFormat"
-                  checked={format === "mp4"}
-                  onChange={() => setFormat("mp4")}
-                  className="mt-1 accent-primary"
-                />
+                <input type="radio" name="cloakingMode" checked={mode === m.key} onChange={() => setMode(m.key)} className="mt-1 accent-primary" />
                 <div>
-                  <span className="block text-xs font-bold text-white flex items-center gap-2">
-                    MP4 (H.264 via FFmpeg)
-                    <span className="rounded bg-primary/20 text-primary text-[10px] px-1.5 py-0.2">Recomendado</span>
-                  </span>
-                  <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                    Aceito universalmente pelo Facebook Ads, TikTok Ads e Google Ads.
-                  </span>
+                  <span className="block text-sm font-semibold text-white">{m.label}</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">{m.desc}</span>
                 </div>
               </label>
+            ))}
 
-              <label
-                onClick={() => setFormat("webm")}
-                className={`flex cursor-pointer gap-3 p-4 transition-colors ${
-                  format === "webm" ? "bg-secondary/40" : "hover:bg-secondary/20"
-                }`}
+            <div className="p-5">
+              <button
+                disabled={files.length === 0 || processing}
+                onClick={processVideo}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-xs font-bold text-primary-foreground shadow-md transition-all hover:brightness-110 disabled:opacity-50"
               >
-                <input
-                  type="radio"
-                  name="outputFormat"
-                  checked={format === "webm"}
-                  onChange={() => setFormat("webm")}
-                  className="mt-1 accent-primary"
-                />
-                <div>
-                  <span className="block text-xs font-bold text-white">WebM (Nativo)</span>
-                  <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                    Processamento ultrarrápido sem conversão.
-                  </span>
-                </div>
-              </label>
-            </Panel>
-          </div>
-
-          {/* Modo de Camuflagem */}
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-white">Modo de camuflagem</h2>
-            <Panel className="bg-[#14171a] border-border divide-y divide-border">
-              {/* Opção Básica */}
-              <label
-                onClick={() => setMode("basica")}
-                className={`flex cursor-pointer gap-3 p-5 transition-colors ${
-                  mode === "basica" ? "bg-secondary/40" : "hover:bg-secondary/20"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="cloakingMode"
-                  checked={mode === "basica"}
-                  onChange={() => setMode("basica")}
-                  className="mt-1 accent-primary"
-                />
-                <div>
-                  <span className="block text-sm font-semibold text-white">Básica</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                    Recodifica o vídeo e limpa os metadados, mudando a impressão digital do arquivo. A capa, se enviada, entra bem discreta.
-                  </span>
-                </div>
-              </label>
-
-              {/* Opção Normal */}
-              <label
-                onClick={() => setMode("normal")}
-                className={`flex cursor-pointer gap-3 p-5 transition-colors ${
-                  mode === "normal" ? "bg-secondary/40" : "hover:bg-secondary/20"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="cloakingMode"
-                  checked={mode === "normal"}
-                  onChange={() => setMode("normal")}
-                  className="mt-1 accent-primary"
-                />
-                <div>
-                  <span className="block text-sm font-semibold text-white">Normal</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                    Recodificação mais forte (bitrate menor) para mudar mais a impressão digital. A capa, se enviada, fica um pouco mais presente.
-                  </span>
-                </div>
-              </label>
-
-              {/* Opção Agressiva */}
-              <label
-                onClick={() => setMode("agressiva")}
-                className={`flex cursor-pointer gap-3 p-5 transition-colors ${
-                  mode === "agressiva" ? "bg-secondary/40" : "hover:bg-secondary/20"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="cloakingMode"
-                  checked={mode === "agressiva"}
-                  onChange={() => setMode("agressiva")}
-                  className="mt-1 accent-primary"
-                />
-                <div>
-                  <span className="block text-sm font-semibold text-white">Agressiva</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                    Recodificação máxima para a maior mudança de impressão digital, com leve custo de qualidade. A capa, se enviada, fica mais visível.
-                  </span>
-                </div>
-              </label>
-
-              {/* Submit Action Button */}
-              <div className="p-5">
-                <button
-                  disabled={files.length === 0 || processing}
-                  onClick={processVideo}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3.5 text-xs font-bold text-primary-foreground shadow-md transition-all hover:brightness-110 disabled:opacity-50"
-                >
-                  <Scissors className="size-4 stroke-[2.5]" />
-                  {processing
-                    ? statusText
-                    : `Camuflar ${files.length || 1} vídeo(s) (${format.toUpperCase()})`}
-                </button>
-              </div>
-            </Panel>
-          </div>
+                <Scissors className="size-4 stroke-[2.5]" />
+                {processing ? (statusText || "Processando...") : `Camuflar ${files.length || 1} vídeo(s)`}
+              </button>
+            </div>
+          </Panel>
         </div>
       </div>
     </AppShell>

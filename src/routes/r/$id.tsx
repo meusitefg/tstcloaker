@@ -1,61 +1,79 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { registerVisit } from "@/lib/links";
-import { Shield, ArrowRight } from "lucide-react";
+import { pageTemplates, renderTemplate, type PageTemplate } from "@/lib/page-templates";
 
 export const Route = createFileRoute("/r/$id")({
-  head: () => ({
-    meta: [
-      { title: "Carregando... | Cloakfy" },
-      { name: "robots", content: "noindex, nofollow" },
-    ],
-  }),
-  component: Redirect,
+  component: RedirectPage,
 });
 
-function Redirect() {
+function RedirectPage() {
   const { id } = Route.useParams();
-  const [missing, setMissing] = useState(false);
+  const navigate = useNavigate();
+  const [safeTemplate, setSafeTemplate] = useState<PageTemplate | null>(null);
+  const [redirecting, setRedirecting] = useState(true);
 
   useEffect(() => {
-    // Check if query contains ?bot=1 or ?test=safe for developer simulation
+    if (typeof window === "undefined") return;
+
+    // Check query params: ?bot=1 or ?preview=safe forces safe page simulation
     const searchParams = new URLSearchParams(window.location.search);
-    const forceBot = searchParams.get("bot") === "1" || searchParams.get("test") === "safe";
+    const forceSafe = searchParams.get("bot") === "1" || searchParams.get("preview") === "safe";
 
-    const targetUrl = registerVisit(id, forceBot ? true : undefined);
+    const destination = registerVisit(id, forceSafe ? true : undefined);
 
-    if (targetUrl) {
-      window.location.replace(targetUrl);
-    } else {
-      setMissing(true);
+    if (!destination) {
+      navigate({ to: "/", replace: true });
+      return;
     }
-  }, [id]);
+
+    // Determine if it was routed to safe page
+    const isBot = forceSafe || destination.includes("/safe/") || isLocalSafePage(destination);
+
+    if (isBot) {
+      const templateId = extractTemplateId(destination) || "bella";
+      const template = pageTemplates.find((t) => t.id === templateId) || pageTemplates[0]!;
+      setSafeTemplate(template);
+      setRedirecting(false);
+    } else {
+      // Normal human: redirect to real offer
+      window.location.href = destination;
+    }
+  }, [id, navigate]);
+
+  if (safeTemplate) {
+    const html = renderTemplate(safeTemplate);
+    return (
+      <div className="fixed inset-0 h-screen w-screen bg-white">
+        <iframe
+          srcDoc={html}
+          title={safeTemplate.name}
+          className="h-full w-full border-none"
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[#0d0f10] px-4 text-center text-white">
-      {missing ? (
-        <div className="max-w-md rounded-2xl border border-border bg-[#14171a] p-8 shadow-2xl">
-          <div className="mx-auto grid size-12 place-items-center rounded-xl bg-secondary text-primary">
-            <Shield className="size-6" />
-          </div>
-          <h1 className="mt-4 text-xl font-bold">Cloaker Indisponível</h1>
-          <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-            Este cloaker foi pausado ou ainda não foi configurado neste navegador.
-          </p>
-          <Link
-            to="/"
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all"
-          >
-            Acessar Painel Cloakfy
-            <ArrowRight className="size-4" />
-          </Link>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-3">
-          <div className="size-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          <p className="text-xs text-muted-foreground font-mono">Verificando segurança...</p>
-        </div>
-      )}
+    <div className="flex min-h-screen items-center justify-center bg-[#0d0f10] text-white">
+      <div className="flex flex-col items-center gap-4">
+        <div className="size-10 animate-spin rounded-full border-4 border-[#00E676] border-t-transparent" />
+        <p className="text-sm text-gray-400">Verificando e redirecionando...</p>
+      </div>
     </div>
   );
+}
+
+function isLocalSafePage(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname === window.location.hostname;
+  } catch {
+    return false;
+  }
+}
+
+function extractTemplateId(url: string): string | null {
+  const match = url.match(/\/safe\/([^/?#]+)/);
+  return match?.[1] ?? null;
 }

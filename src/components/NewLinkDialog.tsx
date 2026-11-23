@@ -43,10 +43,11 @@ export function NewLinkDialog({
     const medium = String(f.get("medium") || "").trim();
     const campaign = String(f.get("campaign") || "").trim();
 
+    const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
     addCloaker({
       destination,
       name,
-      safePage: `https://cloakfy.app/safe/${safeTemplate}`,
+      safePage: `${appOrigin}/safe/${safeTemplate}`,
       safeTemplateId: safeTemplate,
       source,
       medium,
@@ -60,10 +61,11 @@ export function NewLinkDialog({
   }
 
   function useExample() {
+    const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
     addCloaker({
       name: "Oferta Exemplo (VSL)",
       destination: "https://minhaoferta.com/vsl-secreta",
-      safePage: "https://cloakfy.app/safe/bella",
+      safePage: `${appOrigin}/safe/bella`,
       safeTemplateId: "bella",
       source: "facebook",
       medium: "cpc",

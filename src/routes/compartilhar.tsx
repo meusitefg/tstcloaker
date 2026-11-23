@@ -1,135 +1,129 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Copy, Share2, Users, CheckCircle, Gift } from "lucide-react";
 import { useState } from "react";
+import { Copy, Share2, Users, Trophy, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
-import { AppShell, GhostButton, PageHeader, Panel, PrimaryButton } from "@/components/AppShell";
+import { AppShell, PageHeader, Panel } from "@/components/AppShell";
 
 export const Route = createFileRoute("/compartilhar")({
   head: () => ({
     meta: [
       { title: "Indicações | Cloakfy" },
-      { name: "description", content: "Ganhe cloakers permanentes indicando outros anunciantes." },
+      { name: "description", content: "Indique amigos e ganhe cloakers extras permanentes na sua conta." },
       { property: "og:title", content: "Indicações | Cloakfy" },
-      { property: "og:description", content: "Ganhe cloakers permanentes indicando outros anunciantes." },
     ],
   }),
-  component: ReferralsPage,
+  component: CompartilharPage,
 });
 
-function ReferralsPage() {
-  const referralLink = "https://www.cloakfy.com.br/?ref=356c4253";
-  const [copied, setCopied] = useState(false);
+const REF_ID = "35bc4253";
 
-  const copy = async () => {
-    await navigator.clipboard.writeText(referralLink);
+function getAppBase(): string {
+  if (typeof window === "undefined") return "https://cloakfy.com.br";
+  return window.location.origin;
+}
+
+function CompartilharPage() {
+  const [copied, setCopied] = useState(false);
+  const appBase = getAppBase();
+  const refUrl = `${appBase}/?ref=${REF_ID}`;
+
+  async function copyLink() {
+    await navigator.clipboard.writeText(refUrl);
     setCopied(true);
     toast.success("Link de indicação copiado!");
     setTimeout(() => setCopied(false), 2000);
-  };
+  }
 
-  const share = async () => {
+  async function share() {
     if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Cloakfy - Proteção de Campanhas & Cloaker",
-          text: "Proteja seus anúncios no Facebook, Google e TikTok com o Cloakfy.",
-          url: referralLink,
-        });
-      } catch {}
+      await navigator.share({
+        title: "Cloakfy — Proteção de Campanhas",
+        text: "Use meu link para criar sua conta e proteger seus anúncios:",
+        url: refUrl,
+      });
     } else {
-      copy();
+      copyLink();
     }
-  };
+  }
 
   return (
     <AppShell title="Indicações">
-      <div className="mb-6">
-        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Central de operação</p>
-        <p className="mt-2 text-sm text-white/90 font-medium">
-          Cada 3 pessoas que criarem o primeiro cloaker pelo seu link valem +1 cloaker permanente na sua conta, até 10.
-        </p>
-      </div>
+      <PageHeader
+        title="Indicações"
+        subtitle="Cada 3 pessoas que criarem o primeiro cloaker pelo seu link valem +1 cloaker permanente na sua conta, até 10."
+      />
 
-      {/* Link de Indicação - Matching Screenshot 10 */}
-      <h2 className="mb-2 text-sm font-semibold text-white">Seu link</h2>
-      <Panel className="flex flex-wrap items-center gap-3 p-4 bg-[#14171a] border-border">
-        <code className="flex-1 truncate rounded-xl bg-[#0d0f10] border border-border px-4 py-3 font-mono text-sm text-white">
-          {referralLink}
-        </code>
-        <GhostButton onClick={copy} className="py-3 px-5 text-xs font-semibold">
-          <Copy className="size-4" />
-          {copied ? "Copiado!" : "Copiar"}
-        </GhostButton>
-        <PrimaryButton onClick={share} className="py-3 px-5 text-xs font-bold">
-          <Share2 className="size-4" />
-          Compartilhar
-        </PrimaryButton>
+      {/* Ref link */}
+      <Panel className="mb-6 bg-[#14171a] border-border p-6">
+        <p className="text-xs font-semibold text-white mb-3">Seu link</p>
+        <div className="flex gap-2">
+          <div className="flex-1 overflow-hidden rounded-xl border border-border bg-[#0d0f10] px-4 py-3 font-mono text-sm text-white truncate">
+            {refUrl}
+          </div>
+          <button
+            onClick={copyLink}
+            className={`flex items-center gap-2 rounded-xl border border-border bg-card/60 px-4 py-2.5 text-xs font-semibold transition-all ${copied ? "text-emerald-400 border-emerald-500/30" : "text-white hover:bg-accent"}`}
+          >
+            <Copy className="size-4" /> {copied ? "Copiado!" : "Copiar"}
+          </button>
+          <button
+            onClick={share}
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all"
+          >
+            <Share2 className="size-4" /> Compartilhar
+          </button>
+        </div>
       </Panel>
 
-      {/* 3 KPI Cards - Matching Screenshot 10 */}
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        <Panel className="p-6 bg-[#14171a] border-border">
-          <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Users className="size-4 text-muted-foreground" /> Cadastraram
-          </p>
-          <p className="mt-2 text-3xl font-bold text-white">0</p>
-          <p className="mt-1 text-xs text-muted-foreground">Criaram conta pelo seu link</p>
-        </Panel>
-
-        <Panel className="p-6 bg-[#14171a] border-border">
-          <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <CheckCircle className="size-4 text-emerald-400" /> Qualificaram
-          </p>
-          <p className="mt-2 text-3xl font-bold text-white">0</p>
-          <p className="mt-1 text-xs text-muted-foreground">Já criaram o primeiro cloaker</p>
-        </Panel>
-
-        <Panel className="p-6 bg-[#14171a] border-border">
-          <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Gift className="size-4 text-primary" /> Cloakers ganhos
-          </p>
-          <p className="mt-2 text-3xl font-bold text-white">0</p>
-          <p className="mt-1 text-xs text-muted-foreground">Teto de 10</p>
-        </Panel>
+      {/* Stats */}
+      <div className="mb-6 grid grid-cols-3 gap-4">
+        {[
+          { icon: <Users className="size-5 text-primary" />, label: "Cadastraram", value: 0, desc: "Criaram conta pelo seu link" },
+          { icon: <Trophy className="size-5 text-amber-400" />, label: "Qualificaram", value: 0, desc: "Já criaram o primeiro cloaker" },
+          { icon: <Trophy className="size-5 text-emerald-400" />, label: "Cloakers ganhos", value: 0, desc: "Total de 10" },
+        ].map((s, i) => (
+          <Panel key={i} className="bg-[#14171a] border-border p-5">
+            <div className="flex items-center gap-3 mb-3">{s.icon}</div>
+            <p className="text-xs text-muted-foreground">{s.label}</p>
+            <p className="mt-1 text-2xl font-bold text-white">{s.value}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">{s.desc}</p>
+          </Panel>
+        ))}
       </div>
 
-      {/* Progress Bar - Matching Screenshot 10 */}
-      <Panel className="mt-6 p-6 bg-[#14171a] border-border">
-        <div className="flex items-center justify-between text-xs">
-          <span className="font-semibold text-white">Próximo cloaker</span>
-          <span className="font-mono text-muted-foreground">0/3</span>
+      {/* Next milestone */}
+      <Panel className="mb-6 bg-[#14171a] border-border p-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-white">Próximo cloaker</p>
+          <span className="text-xs text-muted-foreground">0/3</span>
         </div>
-        <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-secondary">
-          <div className="h-full bg-primary" style={{ width: "0%" }} />
+        <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+          <div className="h-full w-0 rounded-full bg-primary" />
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           Faltam 3 pessoas qualificarem pra você ganhar mais um cloaker.
         </p>
       </Panel>
 
-      {/* Como Funciona - Matching Screenshot 10 */}
-      <h2 className="mb-3 mt-10 text-sm font-semibold text-white">Como funciona</h2>
-      <Panel className="divide-y divide-border bg-[#14171a] border-border text-xs leading-relaxed">
-        <div className="flex gap-4 px-6 py-4 items-start">
-          <span className="font-bold text-white">1.</span>
-          <span className="text-muted-foreground">
-            Você manda seu link. Quem clicar e criar conta fica ligado a você por 30 dias.
-          </span>
-        </div>
-        <div className="flex gap-4 px-6 py-4 items-start">
-          <span className="font-bold text-white">2.</span>
-          <span className="text-muted-foreground">
-            Quando essa pessoa cria o primeiro cloaker dela, a indicação qualifica.
-          </span>
-        </div>
-        <div className="flex gap-4 px-6 py-4 items-start">
-          <span className="font-bold text-white">3.</span>
-          <span className="text-muted-foreground">
-            A cada 3 qualificadas, você ganha +1 cloaker permanente — soma ao limite do seu plano e não expira.
-          </span>
-        </div>
-        <div className="px-6 py-4 text-[11px] text-muted-foreground/80">
-          Vale só cadastro novo e de pessoa diferente: contas antigas, indicação de si mesmo e repetição do mesmo aparelho não contam.
+      {/* How it works */}
+      <Panel className="bg-[#14171a] border-border p-5">
+        <p className="text-sm font-semibold text-white mb-4">Como funciona</p>
+        <ol className="space-y-4">
+          {[
+            "Você manda seu link. Quem clicar e criar conta fica ligado a você por 30 dias.",
+            "Quando essa pessoa cria o primeiro cloaker dela, a indicação qualifica.",
+            "A cada 3 qualificados, você ganha +1 cloaker permanente — some ao limite do seu plano e não expira.",
+          ].map((text, i) => (
+            <li key={i} className="flex items-start gap-3 text-sm text-muted-foreground">
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                {i + 1}
+              </span>
+              {text}
+            </li>
+          ))}
+        </ol>
+        <div className="mt-5 rounded-xl border border-border bg-[#0d0f10] p-3.5 text-xs text-muted-foreground leading-relaxed">
+          Vale ao cadastro com a mesma conta / diferentes contas antigas; indicações de almeacrias e repetição do mesmo aconto não contam.
         </div>
       </Panel>
     </AppShell>

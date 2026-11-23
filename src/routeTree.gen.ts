@@ -29,6 +29,7 @@ import { Route as PlanosRouteImport } from './routes/planos'
 import { Route as TextoRouteImport } from './routes/texto'
 import { Route as VideoRouteImport } from './routes/video'
 import { Route as RIdRouteImport } from './routes/r/$id'
+import { Route as SafeTemplateIdRouteImport } from './routes/safe/$templateId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -130,6 +131,11 @@ const RIdRoute = RIdRouteImport.update({
   path: '/r/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SafeTemplateIdRoute = SafeTemplateIdRouteImport.update({
+  id: '/safe/$templateId',
+  path: '/safe/$templateId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/texto': typeof TextoRoute
   '/video': typeof VideoRoute
   '/r/$id': typeof RIdRoute
+  '/safe/$templateId': typeof SafeTemplateIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/texto': typeof TextoRoute
   '/video': typeof VideoRoute
   '/r/$id': typeof RIdRoute
+  '/safe/$templateId': typeof SafeTemplateIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/texto': typeof TextoRoute
   '/video': typeof VideoRoute
   '/r/$id': typeof RIdRoute
+  '/safe/$templateId': typeof SafeTemplateIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
     | '/texto'
     | '/video'
     | '/r/$id'
+    | '/safe/$templateId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/texto'
     | '/video'
     | '/r/$id'
+    | '/safe/$templateId'
   id:
     | '__root__'
     | '/'
@@ -265,6 +276,7 @@ export interface FileRouteTypes {
     | '/texto'
     | '/video'
     | '/r/$id'
+    | '/safe/$templateId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -288,6 +300,7 @@ export interface RootRouteChildren {
   TextoRoute: typeof TextoRoute
   VideoRoute: typeof VideoRoute
   RIdRoute: typeof RIdRoute
+  SafeTemplateIdRoute: typeof SafeTemplateIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -432,6 +445,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/safe/$templateId': {
+      id: '/safe/$templateId'
+      path: '/safe/$templateId'
+      fullPath: '/safe/$templateId'
+      preLoaderRoute: typeof SafeTemplateIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -456,6 +476,7 @@ const rootRouteChildren: RootRouteChildren = {
   TextoRoute: TextoRoute,
   VideoRoute: VideoRoute,
   RIdRoute: RIdRoute,
+  SafeTemplateIdRoute: SafeTemplateIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

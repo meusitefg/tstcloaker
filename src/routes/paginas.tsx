@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Copy, Eye, FileCode, Folder, Plus, X, ShieldCheck, ExternalLink, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { AppShell, PageHeader, Panel, PrimaryButton } from "@/components/AppShell";
+import { AppShell, PageHeader, Panel, PrimaryButton, useNewCloaker } from "@/components/AppShell";
 import { pageTemplates, renderTemplate, type PageTemplate } from "@/lib/page-templates";
 
 export const Route = createFileRoute("/paginas")({
@@ -23,6 +23,7 @@ function SafePages() {
   const [cat, setCat] = useState("Todos");
   const [preview, setPreview] = useState<PageTemplate | null>(null);
   const [custom, setCustom] = useState(false);
+  const openNewCloaker = useNewCloaker();
 
   const list = pageTemplates.filter((t) => cat === "Todos" || t.category === cat);
 
@@ -32,11 +33,13 @@ function SafePages() {
   };
 
   const openInTab = (t: PageTemplate) => {
-    const html = renderTemplate(t);
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank", "noopener");
+    window.open(`/safe/${t.id}`, "_blank", "noopener");
     toast.success(`Página "${t.name}" aberta em nova aba!`);
+  };
+
+  const handleUseTemplate = (t: PageTemplate) => {
+    openNewCloaker({ safeTemplateId: t.id });
+    toast.success(`Template "${t.name}" selecionado para o novo cloaker!`);
   };
 
   return (
@@ -117,7 +120,7 @@ function SafePages() {
                   Preview
                 </button>
                 <button
-                  onClick={() => openInTab(t)}
+                  onClick={() => handleUseTemplate(t)}
                   className="flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all"
                 >
                   <ExternalLink className="size-3.5" />
