@@ -198,6 +198,14 @@ export function toggleLink(id: string) {
 
 export const toggleCloaker = toggleLink;
 
+export function updateCloaker(id: string, updates: Partial<Cloaker>): void {
+  const current = readCloakers();
+  const next = current.map((c) => (c.id === id ? { ...c, ...updates } : c));
+  writeCloakers(next);
+}
+
+export const updateLink = updateCloaker;
+
 export function removeLink(id: string) {
   writeCloakers(readCloakers().filter((l) => l.id !== id));
 }

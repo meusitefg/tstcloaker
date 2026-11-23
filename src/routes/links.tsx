@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Copy, Globe, Pause, Play, Trash2, Shield, Eye, Bot, ExternalLink, Zap, Pencil, Check, X, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, Empty, NewCloakerButton, PageHeader, Panel } from "@/components/AppShell";
-import { removeLink, shareUrl, toggleLink, useLinks, simulateVisit, addLink } from "@/lib/links";
+import { removeLink, shareUrl, toggleLink, useLinks, simulateVisit, addLink, updateCloaker } from "@/lib/links";
 import type { Cloaker } from "@/lib/links";
 import { pageTemplates } from "@/lib/page-templates";
 
@@ -13,25 +13,19 @@ export const Route = createFileRoute("/links")({
       { title: "Cloakers | Cloakfy" },
       { name: "description", content: "Crie, acompanhe e ajuste a proteção das suas campanhas." },
       { property: "og:title", content: "Cloakers | Cloakfy" },
+      { property: "og:description", content: "Crie, acompanhe e ajuste a proteção das suas campanhas." },
     ],
   }),
   component: CloakersPage,
 });
 
-function updateCloaker(id: string, updates: Partial<Cloaker>) {
-  try {
-    const raw = localStorage.getItem("cloakfy-cloakers");
-    if (!raw) return;
-    const cloakers: Cloaker[] = JSON.parse(raw);
-    const updated = cloakers.map((c) => c.id === id ? { ...c, ...updates } : c);
-    localStorage.setItem("cloakfy-cloakers", JSON.stringify(updated));
-    window.dispatchEvent(new StorageEvent("storage", { key: "cloakfy-cloakers" }));
-  } catch (err) {
-    console.error("Error updating cloaker:", err);
-  }
-}
-
 type EditMode = "destination" | "full" | null;
+
+function extractTemplateId(url?: string): string {
+  if (!url) return "bella";
+  const match = url.match(/\/safe\/([^/?#]+)/);
+  return match?.[1] ?? "bella";
+}
 
 function CloakersPage() {
   const cloakers = useLinks();
@@ -43,7 +37,7 @@ function CloakersPage() {
   const [editName, setEditName] = useState("");
   const [editDest, setEditDest] = useState("");
   const [editSafe, setEditSafe] = useState("");
-  const [editSafeTemplate, setEditSafeTemplate] = useState("");
+  const [editSafeTemplate, setEditSafeTemplate] = useState("bella");
   const [editCampaign, setEditCampaign] = useState("");
   const [editMode2, setEditMode2] = useState<"basica" | "normal" | "agressiva">("normal");
 
@@ -59,7 +53,8 @@ function CloakersPage() {
     setEditName(cloaker.name);
     setEditDest(cloaker.destination);
     setEditSafe(cloaker.safePage || "");
-    setEditSafeTemplate(cloaker.safeTemplateId || "");
+    const templateId = cloaker.safeTemplateId || extractTemplateId(cloaker.safePage);
+    setEditSafeTemplate(templateId);
     setEditCampaign(cloaker.campaign || "");
     setEditMode2(cloaker.mode || "normal");
   }
@@ -79,19 +74,19 @@ function CloakersPage() {
     let url = editDest.trim();
     if (!url.startsWith("http://") && !url.startsWith("https://")) url = "https://" + url;
     try { new URL(url); } catch { toast.error("URL de destino inválida."); return; }
-    const safePageResolved = editSafeTemplate
-      ? `${window.location.origin}/safe/${editSafeTemplate}`
-      : (editSafe.trim() || `${window.location.origin}/safe/bella`);
+    const templateChosen = editSafeTemplate || "bella";
+    const appOrigin = typeof window !== "undefined" ? window.location.origin : "";
+    const safePageResolved = `${appOrigin}/safe/${templateChosen}`;
     const updates: Partial<Cloaker> = {
       name: editName.trim() || editName,
       destination: url,
       safePage: safePageResolved,
+      safeTemplateId: templateChosen,
       campaign: editCampaign.trim(),
       mode: editMode2,
     };
-    if (editSafeTemplate) updates.safeTemplateId = editSafeTemplate;
     updateCloaker(editingId, updates);
-    toast.success("Cloaker atualizado!");
+    toast.success("Cloaker e Página Safe atualizados!");
     setEditingId(null); setEditMode(null);
   }
 
@@ -133,7 +128,7 @@ function CloakersPage() {
       {/* Full Edit Modal */}
       {editMode === "full" && editingId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <Panel className="w-full max-w-lg bg-[#14171a] border-border p-0 overflow-hidden">
+          <Panel className="w-full max-w-lg bg-[#14171a] border-border p-0 overflow-hidden shadow-2xl">
             <div className="flex items-center justify-between p-5 border-b border-border">
               <div className="flex items-center gap-2">
                 <Shield className="size-5 text-primary" />
@@ -165,18 +160,13 @@ function CloakersPage() {
                   onChange={(e) => setEditSafeTemplate(e.target.value)}
                   className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary"
                 >
-                  <option value="">— Usar URL personalizada —</option>
                   {pageTemplates.map((t) => (
                     <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
                   ))}
                 </select>
-                {!editSafeTemplate && (
-                  <input
-                    type="url" value={editSafe} onChange={(e) => setEditSafe(e.target.value)}
-                    placeholder="https://minha-pagina-safe.com"
-                    className="mt-2 w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary"
-                  />
-                )}
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  A página safe selecionada será exibida automaticamente para moderadores e bots.
+                </p>
               </div>
 
               <div>
@@ -192,6 +182,7 @@ function CloakersPage() {
                   {(["basica", "normal", "agressiva"] as const).map((m) => (
                     <button
                       key={m}
+                      type="button"
                       onClick={() => setEditMode2(m)}
                       className={`rounded-xl border py-2 text-xs font-semibold capitalize transition-all ${
                         editMode2 === m
@@ -246,6 +237,9 @@ function CloakersPage() {
                     </span>
                     <span className="rounded-full border border-border bg-secondary/40 px-2 py-0.5 text-[11px] text-muted-foreground capitalize">
                       {l.mode || "normal"}
+                    </span>
+                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                      Safe: {l.safeTemplateId || extractTemplateId(l.safePage)}
                     </span>
                   </div>
 
