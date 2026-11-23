@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { registerVisit, readCloakers, type Cloaker } from "@/lib/links";
+import { registerVisit, readCloakers } from "@/lib/links";
 import { pageTemplates, renderTemplate, type PageTemplate } from "@/lib/page-templates";
 
 export const Route = createFileRoute("/r/$id")({
@@ -16,7 +16,7 @@ export const Route = createFileRoute("/r/$id")({
 function RedirectPage() {
   const { id } = Route.useParams();
   const [safeTemplate, setSafeTemplate] = useState<PageTemplate | null>(null);
-  const [isPaused, setIsPaused] = useState(false);
+  const [is404, setIs404] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -30,10 +30,12 @@ function RedirectPage() {
     const allCloakers = readCloakers();
     const cloaker = allCloakers.find((c) => c.id === id);
 
-    // 2. If the cloaker is paused (active === false), show exact 404 page!
-    if (cloaker && cloaker.active === false && !forceSafe && !forceOffer) {
-      setIsPaused(true);
-      return;
+    // 2. If the cloaker was deleted, does not exist, or is paused (active === false) -> Show 404!
+    if (!cloaker || cloaker.active === false) {
+      if (!forceSafe && !forceOffer) {
+        setIs404(true);
+        return;
+      }
     }
 
     // 3. Detect if this is real ad traffic from human lead (Facebook/Google/TikTok ads)
@@ -59,7 +61,7 @@ function RedirectPage() {
       (!forceOffer && !hasAdClickToken);
 
     if (shouldShowSafe) {
-      // Find template
+      // Find template of this specific cloaker
       const templateId = cloaker?.safeTemplateId || "bella";
       const template = pageTemplates.find((t) => t.id === templateId) || pageTemplates[0]!;
       registerVisit(id, true);
@@ -80,14 +82,13 @@ function RedirectPage() {
       });
       window.location.href = finalUrl.href;
     } else {
-      // Cloaker ID not found on this device — show safe page as ultimate shield
-      const fallbackTemplate = pageTemplates[0]!;
-      setSafeTemplate(fallbackTemplate);
+      // If no destination exists, show 404
+      setIs404(true);
     }
   }, [id]);
 
-  // When paused: render exact 404 page requested by user
-  if (isPaused) {
+  // When paused or deleted: render exact 404 page requested by user
+  if (is404) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#0d0f10] text-white px-4 text-center">
         <h1 className="text-8xl font-black text-white/90 tracking-tight">404</h1>
