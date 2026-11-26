@@ -46,6 +46,10 @@ function RedirectPage() {
             .maybeSingle();
 
           if (supaLink) {
+            if (supaLink.status === "paused") {
+              setIs404(true);
+              return;
+            }
             cloaker = {
               id: supaLink.id,
               name: supaLink.name,
@@ -64,7 +68,9 @@ function RedirectPage() {
               medium: "",
               campaign: "",
             };
-          } else if (!error && !cloaker) {
+          } else if (!error) {
+            // Not found in Supabase -> Link was deleted or doesn't exist
+            markAsDeleted(id);
             setIs404(true);
             return;
           }

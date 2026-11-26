@@ -293,35 +293,87 @@ export default {
       const id = url.pathname.replace("/api/cloakers/delete/", "");
       serverCloakers.delete(id);
       serverDeletedIds.add(id);
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/links?id=eq.${id}`, {
+          method: "DELETE",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+          },
+        });
+      } catch {}
       await persistToCloudStore();
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
       });
     }
 
-    // Direct 404 check for /r/$id on server
+    // Direct 404 check for /r/$id on server (instant edge sync)
     if (url.pathname.startsWith("/r/")) {
       const pathPart = url.pathname.replace("/r/", "").split("?")[0] || "";
       const rawId = pathPart.split("/")[0] || "";
 
       if (rawId) {
-        if (!syncInitialized || serverCloakers.size === 0) {
-          await syncFromCloudStore();
-          syncInitialized = true;
-        }
-
         if (serverDeletedIds.has(rawId)) {
           return new Response(render404Html(), {
             status: 404,
-            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "cache-control": "no-store, no-cache, must-revalidate",
+            },
           });
+        }
+
+        try {
+          const supaRes = await fetch(
+            `${SUPABASE_URL}/rest/v1/links?or=(id.eq.${rawId},slug.eq.${rawId})&select=*`,
+            {
+              headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: `Bearer ${SUPABASE_KEY}`,
+              },
+              cache: "no-store",
+            }
+          );
+          if (supaRes.ok) {
+            const links: any = await supaRes.json();
+            if (!Array.isArray(links) || links.length === 0) {
+              // Deleted from Supabase -> Return 404!
+              serverDeletedIds.add(rawId);
+              serverCloakers.delete(rawId);
+              return new Response(render404Html(), {
+                status: 404,
+                headers: {
+                  "content-type": "text/html; charset=utf-8",
+                  "cache-control": "no-store, no-cache, must-revalidate",
+                },
+              });
+            }
+
+            const targetLink = links[0];
+            if (targetLink.status === "paused") {
+              // Paused in Supabase -> Return 404!
+              return new Response(render404Html(), {
+                status: 404,
+                headers: {
+                  "content-type": "text/html; charset=utf-8",
+                  "cache-control": "no-store, no-cache, must-revalidate",
+                },
+              });
+            }
+          }
+        } catch (e) {
+          console.error("Supabase edge check error:", e);
         }
 
         const cloaker = serverCloakers.get(rawId);
         if (cloaker && cloaker.active === false) {
           return new Response(render404Html(), {
             status: 404,
-            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+            headers: {
+              "content-type": "text/html; charset=utf-8",
+              "cache-control": "no-store, no-cache, must-revalidate",
+            },
           });
         }
       }

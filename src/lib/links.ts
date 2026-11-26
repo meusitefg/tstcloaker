@@ -68,6 +68,38 @@ let logCache: CloakerLog[] | null = null;
 
 // Initial server sync on client boot
 if (typeof window !== "undefined") {
+  if (supabase && isSupabaseConfigured) {
+    Promise.resolve(
+      supabase
+        .from("links")
+        .select("*")
+        .order("created_at", { ascending: false })
+    )
+      .then((res: any) => {
+        if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+          const mapped: Cloaker[] = res.data.map((l: any) => ({
+            id: l.id,
+            name: l.name,
+            destination: l.offer_url,
+            safePage: l.safe_url,
+            safeTemplateId: l.safe_url?.includes("/safe/")
+              ? l.safe_url.split("/safe/")[1]
+              : "bella",
+            active: l.status === "active",
+            visits: (l.clicks_human || 0) + (l.clicks_bot || 0),
+            humanVisits: l.clicks_human || 0,
+            botVisits: l.clicks_bot || 0,
+            createdAt: l.created_at || new Date().toISOString(),
+            mode: "normal",
+          }));
+          cloakerCache = mapped;
+          localStorage.setItem(STORAGE_KEY_CLOAKERS, JSON.stringify(mapped));
+          listeners.forEach((l) => l());
+        }
+      })
+      .catch(() => {});
+  }
+
   fetch("/api/cloakers")
     .then((r) => r.json())
     .then((data) => {
@@ -299,7 +331,18 @@ export function addLink(input: {
 export const addCloaker = addLink;
 
 export function toggleLink(id: string) {
-  writeCloakers(readCloakers().map((l) => (l.id === id ? { ...l, active: !l.active } : l)));
+  const current = readCloakers();
+  const next = current.map((l) => (l.id === id ? { ...l, active: !l.active } : l));
+  writeCloakers(next);
+  const target = next.find((l) => l.id === id);
+  if (target && supabase && isSupabaseConfigured) {
+    Promise.resolve(
+      supabase
+        .from("links")
+        .update({ status: target.active ? "active" : "paused" })
+        .eq("id", id)
+    ).catch(() => {});
+  }
 }
 
 export const toggleCloaker = toggleLink;
@@ -308,6 +351,20 @@ export function updateCloaker(id: string, updates: Partial<Cloaker>): void {
   const current = readCloakers();
   const next = current.map((c) => (c.id === id ? { ...c, ...updates } : c));
   writeCloakers(next);
+  const target = next.find((l) => l.id === id);
+  if (target && supabase && isSupabaseConfigured) {
+    Promise.resolve(
+      supabase
+        .from("links")
+        .update({
+          name: target.name,
+          safe_url: target.safePage,
+          offer_url: target.destination,
+          status: target.active ? "active" : "paused",
+        })
+        .eq("id", id)
+    ).catch(() => {});
+  }
 }
 
 export const updateLink = updateCloaker;
@@ -315,6 +372,7 @@ export const updateLink = updateCloaker;
 export function removeLink(id: string) {
   markAsDeleted(id);
   writeCloakers(readCloakers().filter((l) => l.id !== id));
+  fetch(`/api/cloakers/delete/${id}`, { method: "POST" }).catch(() => {});
   if (supabase && isSupabaseConfigured) {
     Promise.resolve(supabase.from("links").delete().eq("id", id)).catch(() => {});
   }
