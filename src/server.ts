@@ -22,10 +22,39 @@ async function getServerEntry(): Promise<ServerEntry> {
 const serverCloakers = new Map<string, any>();
 const serverDeletedIds = new Set<string>();
 
+const SUPABASE_URL = "https://vlsnxbszmhisromyzczx.supabase.co";
+const SUPABASE_KEY = "sb_publishable_SF25OuZLX7xc1MsGltU3lg_EE0nyxH4";
+
 const PERSISTENT_API = "https://api.restful-api.dev/objects/ff808181a09d98f701a20a7990ee2bb2";
 let syncInitialized = false;
 
 async function syncFromCloudStore() {
+  try {
+    const supaRes = await fetch(`${SUPABASE_URL}/rest/v1/links?select=*`, {
+      headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
+    });
+    if (supaRes.ok) {
+      const links: any = await supaRes.json();
+      if (Array.isArray(links)) {
+        serverCloakers.clear();
+        links.forEach((l: any) => {
+          serverCloakers.set(l.id, {
+            id: l.id,
+            name: l.name,
+            destination: l.offer_url,
+            safePage: l.safe_url,
+            safeTemplateId: l.safe_url?.includes("/safe/") ? l.safe_url.split("/safe/")[1] : "bella",
+            active: l.status === "active",
+            visits: (l.clicks_human || 0) + (l.clicks_bot || 0),
+            humanVisits: l.clicks_human || 0,
+            botVisits: l.clicks_bot || 0,
+          });
+        });
+        return;
+      }
+    }
+  } catch {}
+
   try {
     const res = await fetch(PERSISTENT_API);
     if (res.ok) {
@@ -48,6 +77,42 @@ async function syncFromCloudStore() {
 }
 
 async function persistToCloudStore() {
+  // Sync to Supabase links table
+  try {
+    const cloakersList = Array.from(serverCloakers.values());
+    for (const c of cloakersList) {
+      await fetch(`${SUPABASE_URL}/rest/v1/links`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "resolution=merge-duplicates",
+        },
+        body: JSON.stringify({
+          id: c.id,
+          name: c.name,
+          slug: c.id,
+          safe_url: c.safePage,
+          offer_url: c.destination,
+          status: c.active ? "active" : "paused",
+          clicks_human: c.humanVisits || 0,
+          clicks_bot: c.botVisits || 0,
+        }),
+      });
+    }
+
+    for (const delId of serverDeletedIds) {
+      await fetch(`${SUPABASE_URL}/rest/v1/links?id=eq.${delId}`, {
+        method: "DELETE",
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+        },
+      });
+    }
+  } catch {}
+
   try {
     await fetch(PERSISTENT_API, {
       method: "PUT",
