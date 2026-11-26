@@ -19,7 +19,7 @@ import { AppShell, PageHeader, Panel, PrimaryButton, useNewCloaker } from "@/com
 import { pageTemplates, renderTemplate, type PageTemplate } from "@/lib/page-templates";
 import {
   readCustomPages,
-  writeCustomPages,
+  useCustomPages,
   saveCustomPage,
   deleteCustomPage,
   readTopics,
@@ -41,8 +41,8 @@ export const Route = createFileRoute("/paginas")({
 
 function SafePages() {
   const [cat, setCat] = useState("Todos");
-  const [topics, setTopics] = useState<string[]>([]);
-  const [customPages, setCustomPages] = useState<CustomPage[]>([]);
+  const [topics, setTopics] = useState<string[]>(readTopics());
+  const customPages = useCustomPages();
   const [filtroTopicoCustom, setFiltroTopicoCustom] = useState("Todos");
   const [preview, setPreview] = useState<{ title: string; html: string } | null>(null);
   const [showEditor, setShowEditor] = useState(false);
@@ -51,7 +51,6 @@ function SafePages() {
   const openNewCloaker = useNewCloaker();
 
   useEffect(() => {
-    setCustomPages(readCustomPages());
     setTopics(readTopics());
   }, []);
 
@@ -75,14 +74,12 @@ function SafePages() {
   const handleDeleteCustomPage = (id: string) => {
     if (confirm("Deseja realmente excluir esta página personalizada?")) {
       deleteCustomPage(id);
-      setCustomPages(readCustomPages());
       toast.success("Página excluída com sucesso!");
     }
   };
 
   const handleSaveCustomPage = (page: Omit<CustomPage, "id" | "createdAt">) => {
     const saved = saveCustomPage(page);
-    setCustomPages(readCustomPages());
     setShowEditor(false);
     toast.success(`Página "${saved.title}" salva! Agora você já pode selecioná-la como Página Safe nos seus Cloakers.`);
   };

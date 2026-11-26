@@ -52,18 +52,22 @@ async function syncFromCloudStore() {
             botVisits: l.clicks_bot || 0,
           });
         });
-        return;
       }
     }
   } catch {}
 
+  // Always load custom safe pages and secondary cloakers from persistent cloud storage
   try {
     const res = await fetch(PERSISTENT_API);
     if (res.ok) {
       const json: any = await res.json();
       if (json?.data) {
-        if (Array.isArray(json.data.cloakers)) {
-          serverCloakers.clear();
+        if (Array.isArray(json.data.customPages)) {
+          json.data.customPages.forEach((p: any) => {
+            if (p?.id) serverCustomPages.set(p.id, p);
+          });
+        }
+        if (Array.isArray(json.data.cloakers) && serverCloakers.size === 0) {
           json.data.cloakers.forEach((c: any) => {
             if (c?.id) serverCloakers.set(c.id, c);
           });
@@ -124,6 +128,7 @@ async function persistToCloudStore() {
         data: {
           cloakers: Array.from(serverCloakers.values()),
           deleted: Array.from(serverDeletedIds),
+          customPages: Array.from(serverCustomPages.values()),
         },
       }),
     });
@@ -246,6 +251,10 @@ export default {
 
     // Custom Safe Pages sync API
     if (url.pathname === "/api/custom-pages") {
+      if (!syncInitialized || serverCustomPages.size === 0) {
+        await syncFromCloudStore();
+        syncInitialized = true;
+      }
       if (request.method === "GET") {
         return new Response(JSON.stringify(Array.from(serverCustomPages.values())), {
           headers: {
@@ -265,6 +274,7 @@ export default {
           } else if (body?.id) {
             serverCustomPages.set(body.id, body);
           }
+          await persistToCloudStore();
           return new Response(JSON.stringify({ ok: true }), {
             headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
           });
@@ -277,6 +287,7 @@ export default {
     if (url.pathname.startsWith("/api/custom-pages/delete/")) {
       const id = url.pathname.replace("/api/custom-pages/delete/", "");
       serverCustomPages.delete(id);
+      await persistToCloudStore();
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
       });
@@ -285,11 +296,15 @@ export default {
     // Direct serve custom safe page
     if (url.pathname.startsWith("/safe/")) {
       const safeId = (url.pathname.replace("/safe/", "").split("?")[0]) || "";
+      if (!syncInitialized || serverCustomPages.size === 0) {
+        await syncFromCloudStore();
+        syncInitialized = true;
+      }
       const custom = serverCustomPages.get(safeId);
       if (custom?.html) {
         return new Response(custom.html, {
           status: 200,
-          headers: { "content-type": "text/html; charset=utf-8" },
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
         });
       }
     }
@@ -423,6 +438,38 @@ export default {
                   "cache-control": "no-store, no-cache, must-revalidate",
                 },
               });
+            }
+
+            // Direct edge custom safe page serve if accessed directly or by crawler
+            const safePath = targetLink.safe_url || "";
+            if (safePath.includes("/safe/")) {
+              const safeId = safePath.split("/safe/")[1]?.split("?")[0] || "";
+              if (safeId) {
+                if (serverCustomPages.size === 0) {
+                  await syncFromCloudStore();
+                }
+                const custom = serverCustomPages.get(safeId);
+                if (custom?.html) {
+                  const searchParams = url.searchParams;
+                  const hasAdClickToken =
+                    searchParams.has("fbclid") ||
+                    searchParams.has("gclid") ||
+                    searchParams.has("ttclid") ||
+                    searchParams.has("utm_source") ||
+                    searchParams.get("lead") === "1";
+                  const isForceSafe = searchParams.get("bot") === "1" || searchParams.get("preview") === "safe";
+
+                  if (!hasAdClickToken || isForceSafe) {
+                    return new Response(custom.html, {
+                      status: 200,
+                      headers: {
+                        "content-type": "text/html; charset=utf-8",
+                        "cache-control": "no-store",
+                      },
+                    });
+                  }
+                }
+              }
             }
           }
         } catch (e) {

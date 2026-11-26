@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from "react";
+
 export type CustomPage = {
   id: string;
   title: string;
@@ -27,7 +29,6 @@ export function readTopics(): string[] {
     if (!raw) return DEFAULT_TOPICS;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) {
-      // Merge with default topics ensuring no duplicates
       const merged = Array.from(new Set([...DEFAULT_TOPICS, ...parsed]));
       return merged;
     }
@@ -44,7 +45,9 @@ export function addTopic(newTopic: string): string[] {
   if (current.includes(clean)) return current;
   const next = [...current, clean];
   if (typeof window !== "undefined") {
-    localStorage.setItem(STORAGE_TOPICS, JSON.stringify(next.filter((t) => !DEFAULT_TOPICS.includes(t))));
+    try {
+      localStorage.setItem(STORAGE_TOPICS, JSON.stringify(next.filter((t) => !DEFAULT_TOPICS.includes(t))));
+    } catch {}
   }
   return next;
 }
@@ -67,7 +70,11 @@ export function readCustomPages(): CustomPage[] {
 export function writeCustomPages(pages: CustomPage[]) {
   cachedCustomPages = pages;
   if (typeof window !== "undefined") {
-    localStorage.setItem(STORAGE_CUSTOM_PAGES, JSON.stringify(pages));
+    try {
+      localStorage.setItem(STORAGE_CUSTOM_PAGES, JSON.stringify(pages));
+    } catch (e) {
+      console.warn("localStorage quota warning:", e);
+    }
     // Sync with server store
     fetch("/api/custom-pages", {
       method: "POST",
@@ -99,7 +106,18 @@ export function deleteCustomPage(id: string) {
   }
 }
 
-// Initial sync on client boot
+export function useCustomPages(): CustomPage[] {
+  return useSyncExternalStore(
+    (l) => {
+      customPageListeners.add(l);
+      return () => customPageListeners.delete(l);
+    },
+    readCustomPages,
+    () => []
+  );
+}
+
+// Initial sync on client boot from cloud/edge store
 if (typeof window !== "undefined") {
   fetch("/api/custom-pages")
     .then((r) => r.json())
@@ -107,16 +125,30 @@ if (typeof window !== "undefined") {
       if (Array.isArray(data) && data.length > 0) {
         const local = readCustomPages();
         const map = new Map<string, CustomPage>();
-        local.forEach((p) => map.set(p.id, p));
+        // Add server data first
         data.forEach((p: CustomPage) => {
-          if (p?.id && !map.has(p.id)) {
-            map.set(p.id, p);
-          }
+          if (p?.id) map.set(p.id, p);
+        });
+        // Merge with local data so newly created local pages are preserved
+        local.forEach((p) => {
+          if (p?.id) map.set(p.id, p);
         });
         const merged = Array.from(map.values());
         cachedCustomPages = merged;
-        localStorage.setItem(STORAGE_CUSTOM_PAGES, JSON.stringify(merged));
+        try {
+          localStorage.setItem(STORAGE_CUSTOM_PAGES, JSON.stringify(merged));
+        } catch {}
         customPageListeners.forEach((l) => l());
+      } else {
+        // If server had no data but client has local pages, upload them to server!
+        const local = readCustomPages();
+        if (local.length > 0) {
+          fetch("/api/custom-pages", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(local),
+          }).catch(() => {});
+        }
       }
     })
     .catch(() => {});

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Shield, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { addCloaker, normalizeUrl } from "@/lib/links";
-import { readCustomPages, type CustomPage } from "@/lib/custom-pages";
+import { useCustomPages, type CustomPage } from "@/lib/custom-pages";
 import { pageTemplates } from "@/lib/page-templates";
 
 export type Preset = {
@@ -24,20 +24,17 @@ export function NewLinkDialog({
 }) {
   const [error, setError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [customPages, setCustomPages] = useState<CustomPage[]>([]);
+  const customPages = useCustomPages();
   const [safeTemplate, setSafeTemplate] = useState(preset?.safeTemplateId || "bella");
   const [mode, setMode] = useState<"basica" | "normal" | "agressiva">("normal");
 
   useEffect(() => {
-    const list = readCustomPages();
-    setCustomPages(list);
     if (preset?.safeTemplateId) {
       setSafeTemplate(preset.safeTemplateId);
-    } else if (list.length > 0) {
-      // Default to the user's latest custom page if available!
-      setSafeTemplate(list[0]!.id);
+    } else if (customPages.length > 0 && (!safeTemplate || safeTemplate === "bella")) {
+      setSafeTemplate(customPages[0]!.id);
     }
-  }, [preset?.safeTemplateId]);
+  }, [preset?.safeTemplateId, customPages]);
 
   if (!open) return null;
 

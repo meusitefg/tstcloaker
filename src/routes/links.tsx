@@ -6,7 +6,7 @@ import { AppShell, Empty, NewCloakerButton, PageHeader, Panel } from "@/componen
 import { removeLink, shareUrl, toggleLink, useLinks, simulateVisit, addLink, updateCloaker } from "@/lib/links";
 import type { Cloaker } from "@/lib/links";
 import { pageTemplates } from "@/lib/page-templates";
-import { readCustomPages } from "@/lib/custom-pages";
+import { useCustomPages } from "@/lib/custom-pages";
 
 export const Route = createFileRoute("/links")({
   head: () => ({
@@ -30,6 +30,7 @@ function extractTemplateId(url?: string): string {
 
 function CloakersPage() {
   const cloakers = useLinks();
+  const customPages = useCustomPages();
   const humanVisits = cloakers.reduce((n, l) => n + (l.humanVisits ?? l.visits), 0);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<EditMode>(null);
@@ -161,9 +162,9 @@ function CloakersPage() {
                   onChange={(e) => setEditSafeTemplate(e.target.value)}
                   className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary"
                 >
-                  {readCustomPages().length > 0 && (
+                  {customPages.length > 0 && (
                     <optgroup label="Minhas Páginas Salvas (HTML Próprio)">
-                      {readCustomPages().map((cp) => (
+                      {customPages.map((cp) => (
                         <option key={cp.id} value={cp.id}>
                           ★ {cp.title} ({cp.topic})
                         </option>
@@ -250,8 +251,8 @@ function CloakersPage() {
                     <span className="rounded-full border border-border bg-secondary/40 px-2 py-0.5 text-[11px] text-muted-foreground capitalize">
                       {l.mode || "normal"}
                     </span>
-                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
-                      Safe: {l.safeTemplateId || extractTemplateId(l.safePage)}
+                    <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] text-primary truncate max-w-[200px]">
+                      Safe: {customPages.find((cp) => cp.id === l.safeTemplateId || l.safePage?.includes(cp.id))?.title || l.safeTemplateId || extractTemplateId(l.safePage)}
                     </span>
                   </div>
 
