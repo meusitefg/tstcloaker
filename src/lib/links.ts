@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { supabase, isSupabaseConfigured } from "./supabase";
 
 export type Cloaker = {
   id: string;
@@ -70,18 +71,44 @@ if (typeof window !== "undefined") {
   fetch("/api/cloakers")
     .then((r) => r.json())
     .then((data) => {
-      if (data?.cloakers?.length) {
-        const local = readCloakers();
-        const merged = [...local];
-        data.cloakers.forEach((sc: Cloaker) => {
-          const idx = merged.findIndex((m) => m.id === sc.id);
+      const local = readCloakers();
+      const localDeleted = readDeletedIds();
+      let hasChanges = false;
+      const merged = [...local];
+
+      // Remove any that are deleted on server
+      if (Array.isArray(data?.deleted)) {
+        data.deleted.forEach((id: string) => {
+          if (!localDeleted.includes(id)) {
+            localDeleted.push(id);
+            hasChanges = true;
+          }
+          const idx = merged.findIndex((m) => m.id === id);
           if (idx >= 0) {
-            merged[idx] = sc;
-          } else if (!data.deleted?.includes(sc.id) && !readDeletedIds().includes(sc.id)) {
-            merged.push(sc);
+            merged.splice(idx, 1);
+            hasChanges = true;
           }
         });
-        writeCloakers(merged);
+        if (hasChanges) {
+          localStorage.setItem(STORAGE_KEY_DELETED, JSON.stringify(localDeleted));
+        }
+      }
+
+      if (Array.isArray(data?.cloakers)) {
+        data.cloakers.forEach((sc: Cloaker) => {
+          if (localDeleted.includes(sc.id) || (data.deleted && data.deleted.includes(sc.id))) return;
+          const idx = merged.findIndex((m) => m.id === sc.id);
+          if (idx < 0) {
+            merged.push(sc);
+            hasChanges = true;
+          }
+        });
+      }
+
+      if (hasChanges) {
+        cloakerCache = merged;
+        localStorage.setItem(STORAGE_KEY_CLOAKERS, JSON.stringify(merged));
+        listeners.forEach((l) => l());
       }
     })
     .catch(() => {});
@@ -119,6 +146,28 @@ export function readCloakers(): Cloaker[] {
   return cloakerCache || [];
 }
 
+function syncCloakerToSupabase(cloaker: Cloaker) {
+  if (supabase && isSupabaseConfigured) {
+    Promise.resolve(
+      supabase.from("links").upsert({
+        id: cloaker.id,
+        name: cloaker.name,
+        slug: cloaker.id,
+        safe_url: cloaker.safePage,
+        offer_url: cloaker.destination,
+        status: cloaker.active ? "active" : "paused",
+        clicks_human: cloaker.humanVisits || 0,
+        clicks_bot: cloaker.botVisits || 0,
+        created_at: cloaker.createdAt,
+      })
+    )
+      .then((res: any) => {
+        if (res?.error) console.warn("Supabase upsert warning:", res.error.message);
+      })
+      .catch(() => {});
+  }
+}
+
 function writeCloakers(next: Cloaker[]) {
   cloakerCache = next;
   if (typeof window !== "undefined") {
@@ -127,8 +176,16 @@ function writeCloakers(next: Cloaker[]) {
     fetch("/api/cloakers", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(next),
+      body: JSON.stringify({
+        cloakers: next,
+        deleted: readDeletedIds(),
+      }),
     }).catch(() => {});
+
+    // Sync with Supabase database if configured
+    if (supabase && isSupabaseConfigured) {
+      next.forEach(syncCloakerToSupabase);
+    }
   }
   listeners.forEach((l) => l());
 }
@@ -258,6 +315,9 @@ export const updateLink = updateCloaker;
 export function removeLink(id: string) {
   markAsDeleted(id);
   writeCloakers(readCloakers().filter((l) => l.id !== id));
+  if (supabase && isSupabaseConfigured) {
+    Promise.resolve(supabase.from("links").delete().eq("id", id)).catch(() => {});
+  }
 }
 
 export const removeCloaker = removeLink;

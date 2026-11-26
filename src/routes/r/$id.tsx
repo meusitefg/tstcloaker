@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { registerVisit, readCloakers, readDeletedIds, type Cloaker } from "@/lib/links";
+import { registerVisit, readCloakers, readDeletedIds, markAsDeleted, type Cloaker } from "@/lib/links";
 import { pageTemplates, renderTemplate, type PageTemplate } from "@/lib/page-templates";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export const Route = createFileRoute("/r/$id")({
   head: () => ({
@@ -26,38 +27,87 @@ function RedirectPage() {
       const forceSafe = urlParams.get("bot") === "1" || urlParams.get("preview") === "safe";
       const forceOffer = urlParams.get("lead") === "1" || urlParams.get("preview") === "offer";
 
-      // 1. Check if explicitly deleted locally
+      // 1. Check if deleted locally
       const deletedLocally = readDeletedIds();
       if (deletedLocally.includes(id)) {
         setIs404(true);
         return;
       }
 
-      // 2. Look for cloaker locally
-      const allCloakers = readCloakers();
-      let cloaker: Cloaker | undefined = allCloakers.find((c) => c.id === id);
+      // 2. Query Supabase directly if configured (instant cross-device & cross-IP sync)
+      let cloaker: Cloaker | undefined = readCloakers().find((c) => c.id === id);
 
-      // 3. If not found locally (e.g. opening on mobile device or another browser), query server store
+      if (supabase && isSupabaseConfigured) {
+        try {
+          const { data: supaLink, error } = await supabase
+            .from("links")
+            .select("*")
+            .or(`id.eq.${id},slug.eq.${id}`)
+            .maybeSingle();
+
+          if (supaLink) {
+            cloaker = {
+              id: supaLink.id,
+              name: supaLink.name,
+              destination: supaLink.offer_url,
+              safePage: supaLink.safe_url,
+              safeTemplateId: supaLink.safe_url?.includes("/safe/")
+                ? supaLink.safe_url.split("/safe/")[1]
+                : "bella",
+              active: supaLink.status === "active",
+              visits: (supaLink.clicks_human || 0) + (supaLink.clicks_bot || 0),
+              humanVisits: supaLink.clicks_human || 0,
+              botVisits: supaLink.clicks_bot || 0,
+              createdAt: supaLink.created_at || new Date().toISOString(),
+              mode: "normal",
+              source: "",
+              medium: "",
+              campaign: "",
+            };
+          } else if (!error && !cloaker) {
+            setIs404(true);
+            return;
+          }
+        } catch (e) {
+          console.warn("Supabase check:", e);
+        }
+      }
+
+      // 3. Fallback: Query server store (sync across mobile and PC)
       if (!cloaker) {
         try {
-          const res = await fetch("/api/cloakers");
+          const res = await fetch("/api/cloakers", { cache: "no-store" });
           if (res.ok) {
             const data = await res.json();
-            if (data?.deleted?.includes(id)) {
+            if (Array.isArray(data?.deleted) && data.deleted.includes(id)) {
+              markAsDeleted(id);
               setIs404(true);
               return;
             }
             if (Array.isArray(data?.cloakers)) {
-              cloaker = data.cloakers.find((c: any) => c.id === id);
+              const serverMatch = data.cloakers.find((c: any) => c.id === id);
+              if (serverMatch) {
+                cloaker = serverMatch;
+              } else if (!cloaker && data.cloakers.length > 0) {
+                // Server has cloakers, but this specific ID is not among them
+                setIs404(true);
+                return;
+              }
             }
           }
         } catch {
-          // offline / fetch error fallback
+          // Fallback to local
         }
       }
 
-      // 4. If cloaker exists and is paused (active === false), show 404
-      if (cloaker && cloaker.active === false && !forceSafe && !forceOffer) {
+      // 3. If cloaker does NOT exist, show 404! Never show Bella for deleted/unknown links.
+      if (!cloaker) {
+        setIs404(true);
+        return;
+      }
+
+      // 4. If cloaker is paused (active === false), ALWAYS show 404!
+      if (cloaker.active === false) {
         setIs404(true);
         return;
       }
@@ -75,7 +125,7 @@ function RedirectPage() {
       const isWebDriver = Boolean((navigator as any).webdriver);
 
       // Decision logic:
-      // Direct access (e.g. typing or pasting URL in mobile/PC, ad reviewers, crawlers) -> SHOW SAFE PAGE!
+      // Direct access (typing or pasting URL in mobile/PC, ad reviewers, crawlers) -> SHOW SAFE PAGE!
       // Lead with ad click token -> REDIRECT TO OFFER!
       const shouldShowSafe =
         forceSafe ||
@@ -83,9 +133,9 @@ function RedirectPage() {
         isWebDriver ||
         (!forceOffer && !hasAdClickToken);
 
-      if (shouldShowSafe || !cloaker?.destination) {
-        // Resolve safe template (default to bella if not specified)
-        const templateId = cloaker?.safeTemplateId || "bella";
+      if (shouldShowSafe || !cloaker.destination) {
+        // Resolve the exact safe template configured for this cloaker
+        const templateId = cloaker.safeTemplateId || "bella";
         const template = pageTemplates.find((t) => t.id === templateId) || pageTemplates[0]!;
         registerVisit(id, true);
         setSafeTemplate(template);

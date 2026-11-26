@@ -22,6 +22,120 @@ async function getServerEntry(): Promise<ServerEntry> {
 const serverCloakers = new Map<string, any>();
 const serverDeletedIds = new Set<string>();
 
+const PERSISTENT_API = "https://api.restful-api.dev/objects/ff808181a09d98f701a20a7990ee2bb2";
+let syncInitialized = false;
+
+async function syncFromCloudStore() {
+  try {
+    const res = await fetch(PERSISTENT_API);
+    if (res.ok) {
+      const json: any = await res.json();
+      if (json?.data) {
+        if (Array.isArray(json.data.cloakers)) {
+          serverCloakers.clear();
+          json.data.cloakers.forEach((c: any) => {
+            if (c?.id) serverCloakers.set(c.id, c);
+          });
+        }
+        if (Array.isArray(json.data.deleted)) {
+          json.data.deleted.forEach((id: string) => serverDeletedIds.add(id));
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to sync from cloud store:", err);
+  }
+}
+
+async function persistToCloudStore() {
+  try {
+    await fetch(PERSISTENT_API, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "cloakers-sync",
+        data: {
+          cloakers: Array.from(serverCloakers.values()),
+          deleted: Array.from(serverDeletedIds),
+        },
+      }),
+    });
+  } catch (err) {
+    console.error("Failed to persist to cloud store:", err);
+  }
+}
+
+function render404Html(): string {
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>404 - Página não encontrada</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #0d0f10;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      min-height: 100vh;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 1rem;
+      box-sizing: border-box;
+    }
+    h1 {
+      font-size: 6rem;
+      font-weight: 900;
+      margin: 0;
+      letter-spacing: -0.05em;
+      color: rgba(255, 255, 255, 0.9);
+      line-height: 1;
+    }
+    p.title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 1rem 0 0.5rem 0;
+    }
+    p.desc {
+      font-size: 0.875rem;
+      color: #9ca3af;
+      max-width: 24rem;
+      margin: 0 0 1.5rem 0;
+      line-height: 1.5;
+    }
+    a.btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.75rem;
+      background: #00E676;
+      padding: 0.75rem 1.5rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #000;
+      text-decoration: none;
+      box-shadow: 0 10px 15px -3px rgba(0, 230, 118, 0.2);
+      transition: filter 0.15s ease;
+    }
+    a.btn:hover {
+      filter: brightness(1.1);
+    }
+  </style>
+</head>
+<body>
+  <h1>404</h1>
+  <p class="title">Página não encontrada</p>
+  <p class="desc">A página que você está procurando não existe ou foi movida.</p>
+  <a href="/" class="btn">Voltar ao painel</a>
+</body>
+</html>`;
+}
+
 // h3 swallows in-handler throws into a normal 500 Response with body
 // {"unhandled":true,"message":"HTTPError"} — try/catch alone never fires for those.
 async function normalizeCatastrophicSsrResponse(response: Response): Promise<Response> {
@@ -54,6 +168,11 @@ export default {
 
     // Cross-device sync API: makes cloakers created on PC immediately available on mobile and vice-versa
     if (url.pathname === "/api/cloakers") {
+      if (!syncInitialized || serverCloakers.size === 0) {
+        await syncFromCloudStore();
+        syncInitialized = true;
+      }
+
       if (request.method === "GET") {
         return new Response(
           JSON.stringify({
@@ -72,13 +191,30 @@ export default {
       if (request.method === "POST") {
         try {
           const body: any = await request.json();
-          if (Array.isArray(body)) {
+          if (body?.cloakers && Array.isArray(body.cloakers)) {
+            serverCloakers.clear();
+            body.cloakers.forEach((c: any) => {
+              if (c?.id) serverCloakers.set(c.id, c);
+            });
+            if (Array.isArray(body.deleted)) {
+              body.deleted.forEach((id: string) => serverDeletedIds.add(id));
+            }
+          } else if (Array.isArray(body)) {
+            serverCloakers.clear();
             body.forEach((c: any) => {
               if (c?.id) serverCloakers.set(c.id, c);
             });
           } else if (body?.id) {
             serverCloakers.set(body.id, body);
           }
+
+          // Clean up any deleted
+          for (const delId of serverDeletedIds) {
+            serverCloakers.delete(delId);
+          }
+
+          await persistToCloudStore();
+
           return new Response(JSON.stringify({ ok: true }), {
             headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
           });
@@ -92,9 +228,38 @@ export default {
       const id = url.pathname.replace("/api/cloakers/delete/", "");
       serverCloakers.delete(id);
       serverDeletedIds.add(id);
+      await persistToCloudStore();
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
       });
+    }
+
+    // Direct 404 check for /r/$id on server
+    if (url.pathname.startsWith("/r/")) {
+      const pathPart = url.pathname.replace("/r/", "").split("?")[0] || "";
+      const rawId = pathPart.split("/")[0] || "";
+
+      if (rawId) {
+        if (!syncInitialized || serverCloakers.size === 0) {
+          await syncFromCloudStore();
+          syncInitialized = true;
+        }
+
+        if (serverDeletedIds.has(rawId)) {
+          return new Response(render404Html(), {
+            status: 404,
+            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+          });
+        }
+
+        const cloaker = serverCloakers.get(rawId);
+        if (cloaker && cloaker.active === false) {
+          return new Response(render404Html(), {
+            status: 404,
+            headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+          });
+        }
+      }
     }
 
     try {

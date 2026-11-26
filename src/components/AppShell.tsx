@@ -2,7 +2,6 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   ChevronDown,
-  Diamond,
   Gift,
   Globe,
   Instagram,
@@ -17,7 +16,6 @@ import {
   Sparkles,
   Heart,
   Video,
-  HelpCircle,
   FileCode,
   Image as ImageIcon,
   MessageSquare,
@@ -29,6 +27,8 @@ import {
   Shield,
   Layers,
   CheckCircle2,
+  Menu,
+  X,
 } from "lucide-react";
 import { NewLinkDialog, type Preset } from "./NewLinkDialog";
 import { toast } from "sonner";
@@ -63,6 +63,7 @@ export function CloakfyLogo({ className = "size-7" }: { className?: string }) {
 export function AppShell({ title, children }: { title: string; children: ReactNode }) {
   const [dialog, setDialog] = useState<{ open: boolean; preset?: Preset }>({ open: false });
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const open = (preset?: Preset) => setDialog({ open: true, ...(preset ? { preset } : {}) });
 
   const groups: { title: string; items: Item[]; defaultOpen?: boolean }[] = [
@@ -100,11 +101,6 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
         { to: "/camuflar-texto", label: "Camuflagem de Texto", icon: MessageSquare },
       ],
     },
-    {
-      title: "SUPORTE",
-      defaultOpen: false,
-      items: [{ to: "/ajuda", label: "Central de ajuda", icon: HelpCircle }],
-    },
   ];
 
   return (
@@ -136,11 +132,6 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
             ))}
           </nav>
 
-          {/* Planos Item */}
-          <div className="border-t border-sidebar-border px-2.5 py-2">
-            <NavLink item={{ to: "/planos", label: "Planos", icon: Diamond }} />
-          </div>
-
           {/* User Profile Card */}
           <div className="border-t border-sidebar-border px-4 py-3.5">
             <div className="flex items-center gap-3">
@@ -149,7 +140,10 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
               </span>
               <div className="min-w-0 flex-1 text-sm">
                 <p className="truncate font-semibold text-white leading-tight">Kertulli Machado</p>
-                <p className="text-[11px] text-muted-foreground leading-tight">Plano Grátis</p>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <span className="inline-block size-1.5 rounded-full bg-primary animate-pulse" />
+                  <p className="text-[11px] font-bold text-primary leading-tight">Plano Ilimitado</p>
+                </div>
                 <p className="truncate text-[10px] text-muted-foreground/80 leading-tight">kertullimachado216@gmail.com</p>
               </div>
             </div>
@@ -175,21 +169,35 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
         {/* Content area */}
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Top Header */}
-          <header className="sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-border bg-background/95 px-6 backdrop-blur md:px-10">
-            <div>
-              <p className="text-sm font-semibold text-foreground leading-tight">{title}</p>
-              <p className="text-xs text-muted-foreground leading-tight">Central de operação</p>
-            </div>
+          <header className="sticky top-0 z-20 flex h-[60px] items-center justify-between border-b border-border bg-background/95 px-4 md:px-10 backdrop-blur">
             <div className="flex items-center gap-3">
+              {/* Mobile hamburger button */}
+              <button
+                type="button"
+                aria-label="Abrir menu"
+                onClick={() => setMobileOpen(true)}
+                className="grid size-9 place-items-center rounded-xl border border-border bg-card text-muted-foreground hover:text-white md:hidden"
+              >
+                <Menu className="size-5" />
+              </button>
+              <Link to="/" className="flex items-center gap-2 md:hidden">
+                <CloakfyLogo className="size-7" />
+                <span className="text-white font-extrabold tracking-tight text-base">Cloakfy</span>
+              </Link>
+              <div className="hidden md:block">
+                <p className="text-sm font-semibold text-foreground leading-tight">{title}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3">
               <a
                 href="https://instagram.com"
                 target="_blank"
                 rel="noreferrer"
-                className="grid size-9 place-items-center rounded-full border border-border text-muted-foreground transition-colors hover:text-pink-500 hover:border-pink-500/50"
+                className="grid size-8 sm:size-9 place-items-center rounded-full border border-border text-muted-foreground transition-colors hover:text-pink-500 hover:border-pink-500/50"
               >
-                <Instagram className="size-4" />
+                <Instagram className="size-3.5 sm:size-4" />
               </a>
-              <span className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground">
+              <span className="hidden sm:flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground">
                 <span>🇧🇷</span> Português <ChevronDown className="size-3 text-muted-foreground" />
               </span>
               <span className="grid size-8 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground shadow-sm">
@@ -199,9 +207,85 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           </header>
 
           {/* Main View */}
-          <main className="mx-auto w-full max-w-[1280px] flex-1 px-6 py-8 md:px-10">{children}</main>
+          <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 md:px-10 md:py-8">{children}</main>
         </div>
       </div>
+
+      {/* Mobile Navigation Drawer */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden" onClick={() => setMobileOpen(false)}>
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
+          <div
+            className="relative flex w-[85%] max-w-[320px] flex-col bg-[#0d0f10] border-r border-sidebar-border h-full shadow-2xl z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-sidebar-border p-4">
+              <Link to="/" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
+                <CloakfyLogo className="size-7" />
+                <span className="text-white font-extrabold tracking-tight text-lg">Cloakfy</span>
+              </Link>
+              <button
+                type="button"
+                aria-label="Fechar menu"
+                onClick={() => setMobileOpen(false)}
+                className="grid size-8 place-items-center rounded-lg border border-border text-muted-foreground hover:text-white"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <div className="p-3">
+              <button
+                onClick={() => { setMobileOpen(false); open(); }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground shadow-sm"
+              >
+                <Plus className="size-4 stroke-[3]" />
+                Novo Cloaker
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto px-3 space-y-1">
+              {groups.map((g) => (
+                <div key={g.title} className="py-2">
+                  <p className="px-3 text-[10px] font-bold tracking-wider text-muted-foreground/70 uppercase">
+                    {g.title}
+                  </p>
+                  <div className="mt-1 space-y-0.5">
+                    {g.items.map((item) => (
+                      <Link
+                        key={item.to}
+                        to={item.to}
+                        onClick={() => setMobileOpen(false)}
+                        className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold text-muted-foreground hover:bg-white/5 hover:text-white transition-colors"
+                      >
+                        <item.icon className="size-4" />
+                        <span>{item.label}</span>
+                        {item.badge && (
+                          <span className="ml-auto rounded-md bg-primary/20 px-1.5 py-0.5 text-[9px] font-bold text-primary">
+                            {item.badge}
+                          </span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+
+            <div className="border-t border-sidebar-border p-4 bg-[#14171a]">
+              <div className="flex items-center gap-3">
+                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+                  K
+                </span>
+                <div className="min-w-0 flex-1 text-xs">
+                  <p className="truncate font-semibold text-white">Kertulli Machado</p>
+                  <p className="text-[11px] font-semibold text-primary">Plano Ilimitado</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Floating feedback button */}
       <button

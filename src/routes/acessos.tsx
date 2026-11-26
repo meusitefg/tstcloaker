@@ -66,20 +66,20 @@ function LogsPage() {
         }
       />
 
-      {/* 4 Metric Cards Grid - Exact match with Screenshots 3 & 9 */}
-      <Panel className="mb-6 grid grid-cols-2 divide-border bg-[#14171a] md:grid-cols-4 md:divide-x border-border">
+      {/* 4 Metric Cards Grid */}
+      <Panel className="mb-6 grid grid-cols-2 divide-y divide-border bg-[#14171a] sm:divide-y-0 sm:divide-x md:grid-cols-4 border-border">
         {stats.map((s) => (
-          <div key={s.label} className="p-6">
-            <p className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <s.icon className={`size-4 ${s.color}`} />
-              {s.label}
+          <div key={s.label} className="p-4 sm:p-6">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <s.icon className={`size-3.5 sm:size-4 ${s.color}`} />
+              <span className="truncate">{s.label}</span>
             </p>
-            <p className={`mt-2 text-3xl font-bold tracking-tight ${s.color}`}>{s.value}</p>
+            <p className={`mt-1.5 text-2xl sm:text-3xl font-bold tracking-tight ${s.color}`}>{s.value}</p>
           </div>
         ))}
       </Panel>
 
-      {/* Main Container - Empty State matching Screenshot 9 vs Log Table */}
+      {/* Main Container - Log Table */}
       {logs.length === 0 ? (
         <Empty
           icon={FileText}
@@ -88,7 +88,7 @@ function LogsPage() {
         />
       ) : (
         <Panel className="bg-[#14171a] border-border overflow-hidden">
-          <div className="flex items-center justify-between border-b border-border px-6 py-4">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3 sm:px-6 sm:py-4">
             <h2 className="text-sm font-semibold text-white">Últimas requisições filtradas</h2>
             <button
               onClick={() => {
@@ -102,14 +102,14 @@ function LogsPage() {
               Limpar histórico
             </button>
           </div>
-          <div className="divide-y divide-border">
+          <div className="w-full overflow-x-auto divide-y divide-border">
             {logs.map((log) => (
               <div
                 key={log.id}
-                className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 hover:bg-secondary/20 transition-colors"
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4 px-4 py-3 sm:px-6 sm:py-4 hover:bg-secondary/20 transition-colors min-w-[280px]"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold ${
                         log.decision === "humano"
@@ -127,13 +127,13 @@ function LogsPage() {
                         </>
                       )}
                     </span>
-                    <span className="font-semibold text-sm text-white">{log.cloakerName}</span>
+                    <span className="font-semibold text-sm text-white truncate">{log.cloakerName}</span>
                     <span className="text-xs text-muted-foreground">· {log.timestamp}</span>
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     <span className="text-white/80 font-medium">Motivo do filtro:</span> {log.reason}
                   </p>
-                  <p className="mt-0.5 text-[11px] font-mono text-muted-foreground/80 truncate">
+                  <p className="mt-0.5 text-[11px] font-mono text-muted-foreground/80 break-all">
                     IP: {log.ip} · {log.city} ({log.country}) · {log.device} · {log.browser}
                   </p>
                 </div>

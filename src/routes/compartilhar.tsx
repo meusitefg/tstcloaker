@@ -76,7 +76,7 @@ function CompartilharPage() {
       </Panel>
 
       {/* Stats */}
-      <div className="mb-6 grid grid-cols-3 gap-4">
+      <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           { icon: <Users className="size-5 text-primary" />, label: "Cadastraram", value: 0, desc: "Criaram conta pelo seu link" },
           { icon: <Trophy className="size-5 text-amber-400" />, label: "Qualificaram", value: 0, desc: "Já criaram o primeiro cloaker" },

@@ -104,24 +104,24 @@ function CloakersPage() {
 
       {/* Plan & Usage */}
       <Panel className="mb-6 grid md:grid-cols-[260px_1fr] bg-[#14171a] border-border">
-        <div className="border-b border-border p-6 md:border-r md:border-b-0">
+        <div className="border-b border-border p-5 md:p-6 md:border-r md:border-b-0">
           <p className="text-xs font-medium text-muted-foreground">Seu plano:</p>
-          <p className="mt-1 text-2xl font-bold text-white">Grátis</p>
-          <a href="/planos" className="mt-4 inline-block rounded-xl border border-border bg-card/60 px-4 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors">
-            Fazer upgrade
-          </a>
-        </div>
-        <div className="p-6">
-          <p className="text-xs font-medium text-muted-foreground">Cliques humanos este mês</p>
-          <p className="mt-1 text-2xl font-bold text-white">
-            {humanVisits} <span className="text-sm font-normal text-muted-foreground">/ 1.000</span>
-          </p>
-          <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full rounded-full bg-primary transition-all duration-500"
-              style={{ width: `${Math.min(100, Math.max(humanVisits > 0 ? 5 : 0, (humanVisits / 1000) * 100))}%` }}
-            />
+          <div className="mt-1 flex items-center gap-2">
+            <span className="size-2 rounded-full bg-primary animate-pulse" />
+            <p className="text-2xl font-bold text-primary">Ilimitado</p>
           </div>
+          <span className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-[11px] font-semibold text-primary">
+            ✓ Proteção ativa sem limites
+          </span>
+        </div>
+        <div className="p-5 md:p-6">
+          <p className="text-xs font-medium text-muted-foreground">Cliques humanos este mês</p>
+          <p className="mt-1 text-2xl font-bold text-white flex items-baseline gap-2">
+            {humanVisits} <span className="text-sm font-semibold text-primary">(Ilimitado)</span>
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Sem restrições de volume de tráfego, limites de links ou bloqueio por cliques.
+          </p>
         </div>
       </Panel>
 
@@ -222,8 +222,8 @@ function CloakersPage() {
       ) : (
         <Panel className="bg-[#14171a] border-border divide-y divide-border">
           {cloakers.map((l) => (
-            <div key={l.id} className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <div key={l.id} className="p-4 sm:p-5">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Shield className="size-4 text-primary shrink-0" />
@@ -243,8 +243,8 @@ function CloakersPage() {
                     </span>
                   </div>
 
-                  <div className="mt-1.5 text-xs text-muted-foreground">
-                    <span className="font-mono">{shareUrl(l.id)}</span>
+                  <div className="mt-1.5 text-xs text-muted-foreground break-all">
+                    <span className="font-mono text-white/90">{shareUrl(l.id)}</span>
                   </div>
 
                   {/* Quick destination edit */}
@@ -267,79 +267,82 @@ function CloakersPage() {
                       </button>
                     </div>
                   ) : (
-                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground/70 truncate max-w-xs">
+                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground/70 truncate max-w-md">
                       → {l.destination}
                     </p>
                   )}
                 </div>
 
-                {/* Stats */}
-                <div className="flex items-center gap-4 text-xs">
-                  <div className="text-right">
-                    <p className="font-bold text-white text-sm">{l.humanVisits ?? l.visits}</p>
-                    <p className="text-[11px] text-emerald-400 flex items-center gap-1 justify-end">
-                      <Eye className="size-3" /> Humanos
-                    </p>
+                {/* Stats & Actions Row */}
+                <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 sm:gap-4 border-t lg:border-t-0 border-border/60 pt-3 lg:pt-0">
+                  {/* Stats */}
+                  <div className="flex items-center gap-3 text-xs">
+                    <div className="text-left sm:text-right">
+                      <p className="font-bold text-white text-sm">{l.humanVisits ?? l.visits}</p>
+                      <p className="text-[11px] text-emerald-400 flex items-center gap-1">
+                        <Eye className="size-3" /> Humanos
+                      </p>
+                    </div>
+                    <div className="text-left sm:text-right border-l border-border pl-3">
+                      <p className="font-bold text-white text-sm">{l.botVisits ?? 0}</p>
+                      <p className="text-[11px] text-amber-400 flex items-center gap-1">
+                        <Bot className="size-3" /> Bots
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right border-l border-border pl-4">
-                    <p className="font-bold text-white text-sm">{l.botVisits ?? 0}</p>
-                    <p className="text-[11px] text-amber-400 flex items-center gap-1 justify-end">
-                      <Bot className="size-3" /> Bots
-                    </p>
+
+                  {/* Actions */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      title="Simular clique humano"
+                      onClick={() => { simulateVisit(l.id, false); toast.success("Clique humano simulado!"); }}
+                      className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                    >
+                      <Zap className="size-3" /> +Humano
+                    </button>
+                    <button
+                      title="Simular bot"
+                      onClick={() => { simulateVisit(l.id, true); toast.info("Bot simulado! Desviado para página safe."); }}
+                      className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-[11px] font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
+                    >
+                      <Bot className="size-3" /> +Bot
+                    </button>
+
+                    {/* Full edit button — green "Alterar" */}
+                    <button
+                      title="Editar cloaker completo"
+                      onClick={() => startFullEdit(l)}
+                      className="flex items-center gap-1 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition-colors"
+                    >
+                      <Settings className="size-3.5" /> Alterar
+                    </button>
+
+                    {/* Quick edit destination */}
+                    <IconBtn label="Editar link da oferta rapidamente" onClick={() => editMode === "destination" && editingId === l.id ? cancelEdit() : startQuickEdit(l)}>
+                      <Pencil />
+                    </IconBtn>
+
+                    {/* Copy */}
+                    <IconBtn label="Copiar link do cloaker" onClick={async () => { await navigator.clipboard.writeText(shareUrl(l.id)); toast.success("Link do cloaker copiado!"); }}>
+                      <Copy />
+                    </IconBtn>
+
+                    {/* Open */}
+                    <a href={shareUrl(l.id)} target="_blank" rel="noreferrer" title="Testar link público"
+                      className="grid size-9 place-items-center rounded-xl border border-border bg-card/60 hover:bg-accent text-muted-foreground hover:text-white transition-colors">
+                      <ExternalLink className="size-4" />
+                    </a>
+
+                    {/* Pause/Resume */}
+                    <IconBtn label={l.active ? "Pausar proteção" : "Ativar proteção"} onClick={() => { toggleLink(l.id); toast.info(l.active ? "Cloaker pausado." : "Cloaker ativado!"); }}>
+                      {l.active ? <Pause /> : <Play />}
+                    </IconBtn>
+
+                    {/* Delete */}
+                    <IconBtn label="Excluir cloaker" onClick={() => { if (confirm("Deseja realmente remover este cloaker?")) { removeLink(l.id); toast.success("Cloaker removido."); } }}>
+                      <Trash2 />
+                    </IconBtn>
                   </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1.5">
-                  <button
-                    title="Simular clique humano"
-                    onClick={() => { simulateVisit(l.id, false); toast.success("Clique humano simulado!"); }}
-                    className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-[11px] font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors"
-                  >
-                    <Zap className="size-3" /> +Humano
-                  </button>
-                  <button
-                    title="Simular bot"
-                    onClick={() => { simulateVisit(l.id, true); toast.info("Bot simulado! Desviado para página safe."); }}
-                    className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-border bg-card/60 px-2.5 py-1.5 text-[11px] font-medium text-amber-400 hover:bg-amber-500/10 transition-colors"
-                  >
-                    <Bot className="size-3" /> +Bot
-                  </button>
-
-                  {/* Full edit button — green "Alterar" */}
-                  <button
-                    title="Editar cloaker completo"
-                    onClick={() => startFullEdit(l)}
-                    className="flex items-center gap-1 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition-colors"
-                  >
-                    <Settings className="size-3.5" /> Alterar
-                  </button>
-
-                  {/* Quick edit destination */}
-                  <IconBtn label="Editar link da oferta rapidamente" onClick={() => editMode === "destination" && editingId === l.id ? cancelEdit() : startQuickEdit(l)}>
-                    <Pencil />
-                  </IconBtn>
-
-                  {/* Copy */}
-                  <IconBtn label="Copiar link do cloaker" onClick={async () => { await navigator.clipboard.writeText(shareUrl(l.id)); toast.success("Link do cloaker copiado!"); }}>
-                    <Copy />
-                  </IconBtn>
-
-                  {/* Open */}
-                  <a href={shareUrl(l.id)} target="_blank" rel="noreferrer" title="Testar link público"
-                    className="grid size-9 place-items-center rounded-xl border border-border bg-card/60 hover:bg-accent text-muted-foreground hover:text-white transition-colors">
-                    <ExternalLink className="size-4" />
-                  </a>
-
-                  {/* Pause/Resume */}
-                  <IconBtn label={l.active ? "Pausar proteção" : "Ativar proteção"} onClick={() => { toggleLink(l.id); toast.info(l.active ? "Cloaker pausado." : "Cloaker ativado!"); }}>
-                    {l.active ? <Pause /> : <Play />}
-                  </IconBtn>
-
-                  {/* Delete */}
-                  <IconBtn label="Excluir cloaker" onClick={() => { if (confirm("Deseja realmente remover este cloaker?")) { removeLink(l.id); toast.success("Cloaker removido."); } }}>
-                    <Trash2 />
-                  </IconBtn>
                 </div>
               </div>
             </div>
