@@ -26,6 +26,7 @@ import { Route as LinksRouteImport } from './routes/links'
 import { Route as ModelosRouteImport } from './routes/modelos'
 import { Route as PaginasRouteImport } from './routes/paginas'
 import { Route as PlanosRouteImport } from './routes/planos'
+import { Route as RotabrabaonlogRouteImport } from './routes/rotabrabaonlog'
 import { Route as TextoRouteImport } from './routes/texto'
 import { Route as VideoRouteImport } from './routes/video'
 import { Route as RIdRouteImport } from './routes/r/$id'
@@ -116,6 +117,11 @@ const PlanosRoute = PlanosRouteImport.update({
   path: '/planos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RotabrabaonlogRoute = RotabrabaonlogRouteImport.update({
+  id: '/rotabrabaonlog',
+  path: '/rotabrabaonlog',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TextoRoute = TextoRouteImport.update({
   id: '/texto',
   path: '/texto',
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/modelos': typeof ModelosRoute
   '/paginas': typeof PaginasRoute
   '/planos': typeof PlanosRoute
+  '/rotabrabaonlog': typeof RotabrabaonlogRoute
   '/texto': typeof TextoRoute
   '/video': typeof VideoRoute
   '/r/$id': typeof RIdRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/modelos': typeof ModelosRoute
   '/paginas': typeof PaginasRoute
   '/planos': typeof PlanosRoute
+  '/rotabrabaonlog': typeof RotabrabaonlogRoute
   '/texto': typeof TextoRoute
   '/video': typeof VideoRoute
   '/r/$id': typeof RIdRoute
@@ -202,6 +210,7 @@ export interface FileRoutesById {
   '/modelos': typeof ModelosRoute
   '/paginas': typeof PaginasRoute
   '/planos': typeof PlanosRoute
+  '/rotabrabaonlog': typeof RotabrabaonlogRoute
   '/texto': typeof TextoRoute
   '/video': typeof VideoRoute
   '/r/$id': typeof RIdRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/modelos'
     | '/paginas'
     | '/planos'
+    | '/rotabrabaonlog'
     | '/texto'
     | '/video'
     | '/r/$id'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/modelos'
     | '/paginas'
     | '/planos'
+    | '/rotabrabaonlog'
     | '/texto'
     | '/video'
     | '/r/$id'
@@ -273,6 +284,7 @@ export interface FileRouteTypes {
     | '/modelos'
     | '/paginas'
     | '/planos'
+    | '/rotabrabaonlog'
     | '/texto'
     | '/video'
     | '/r/$id'
@@ -297,6 +309,7 @@ export interface RootRouteChildren {
   ModelosRoute: typeof ModelosRoute
   PaginasRoute: typeof PaginasRoute
   PlanosRoute: typeof PlanosRoute
+  RotabrabaonlogRoute: typeof RotabrabaonlogRoute
   TextoRoute: typeof TextoRoute
   VideoRoute: typeof VideoRoute
   RIdRoute: typeof RIdRoute
@@ -424,6 +437,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PlanosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/rotabrabaonlog': {
+      id: '/rotabrabaonlog'
+      path: '/rotabrabaonlog'
+      fullPath: '/rotabrabaonlog'
+      preLoaderRoute: typeof RotabrabaonlogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/texto': {
       id: '/texto'
       path: '/texto'
@@ -473,6 +493,7 @@ const rootRouteChildren: RootRouteChildren = {
   ModelosRoute: ModelosRoute,
   PaginasRoute: PaginasRoute,
   PlanosRoute: PlanosRoute,
+  RotabrabaonlogRoute: RotabrabaonlogRoute,
   TextoRoute: TextoRoute,
   VideoRoute: VideoRoute,
   RIdRoute: RIdRoute,

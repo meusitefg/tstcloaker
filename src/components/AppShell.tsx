@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useState, useRef, useEffect, type ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   ChevronDown,
@@ -8,7 +8,6 @@ import {
   LayoutGrid,
   Link2,
   LogOut,
-  MessageSquarePlus,
   Plug,
   Plus,
   Radio,
@@ -27,10 +26,12 @@ import {
   Shield,
   Layers,
   CheckCircle2,
+  Check,
   Menu,
   X,
 } from "lucide-react";
 import { NewLinkDialog, type Preset } from "./NewLinkDialog";
+import { useLanguage } from "@/lib/i18n";
 import { toast } from "sonner";
 
 const NewCloakerCtx = createContext<(p?: Preset) => void>(() => {});
@@ -60,18 +61,80 @@ export function CloakfyLogo({ className = "size-7" }: { className?: string }) {
   );
 }
 
+export function LanguageSelector() {
+  const { lang, setLanguage, currentInfo, languages } = useLanguage();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    if (open) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent hover:text-white transition-colors cursor-pointer"
+      >
+        <span>{currentInfo.flag}</span>
+        <span>{currentInfo.name}</span>
+        <ChevronDown className={`size-3 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-44 rounded-2xl border border-border bg-[#14171a] p-1.5 shadow-2xl z-50 animate-in fade-in zoom-in-95">
+          {languages.map((l) => {
+            const isSelected = lang === l.code;
+            return (
+              <button
+                key={l.code}
+                type="button"
+                onClick={() => {
+                  setLanguage(l.code);
+                  setOpen(false);
+                  toast.success(`Idioma alterado para ${l.name}!`);
+                }}
+                className={`flex w-full items-center justify-between gap-2.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors ${
+                  isSelected
+                    ? "bg-[#1f2429] text-white font-bold"
+                    : "text-muted-foreground hover:bg-card hover:text-white"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="text-base">{l.flag}</span>
+                  <span>{l.name}</span>
+                </div>
+                {isSelected && <Check className="size-4 text-white stroke-[2.5]" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AppShell({ title, children }: { title: string; children: ReactNode }) {
   const [dialog, setDialog] = useState<{ open: boolean; preset?: Preset }>({ open: false });
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const open = (preset?: Preset) => setDialog({ open: true, ...(preset ? { preset } : {}) });
+  const { t } = useLanguage();
 
   const groups: { title: string; items: Item[]; defaultOpen?: boolean }[] = [
     {
-      title: "GERAL",
+      title: t("links_campanhas"),
       defaultOpen: true,
       items: [
-        { to: "/", label: "Dashboard", icon: LayoutGrid },
+        { to: "/rotabrabaonlog", label: t("dashboard"), icon: LayoutGrid },
         { to: "/compartilhar", label: "Indicações", icon: Gift, badge: "NOVO" },
       ],
     },
@@ -79,26 +142,26 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
       title: "CLOAKER",
       defaultOpen: true,
       items: [
-        { to: "/links", label: "Cloakers", icon: Layers },
+        { to: "/links", label: t("cloakers"), icon: Layers },
         { to: "/modelos", label: "Ao Vivo", icon: Radio, badge: "LIVE" },
-        { to: "/acessos", label: "Logs", icon: FileText },
-        { to: "/dominios", label: "Domínios", icon: Globe },
-        { to: "/integracoes", label: "Integrações", icon: Plug, badge: "NOVO" },
-        { to: "/paginas", label: "Páginas Safe", icon: FileCode },
+        { to: "/acessos", label: t("acessos"), icon: FileText },
+        { to: "/dominios", label: t("dominios"), icon: Globe },
+        { to: "/integracoes", label: t("integracoes"), icon: Plug, badge: "NOVO" },
+        { to: "/paginas", label: t("paginas"), icon: FileCode },
       ],
     },
     {
-      title: "CRIATIVOS",
+      title: t("ferramentas_midia"),
       defaultOpen: true,
       items: [
-        { to: "/video", label: "Camuflar Vídeo", icon: Video },
-        { to: "/imagem", label: "Camuflar Imagem", icon: ImageIcon },
-        { to: "/camuflar-audio-puro", label: "Camuflar Áudio", icon: Music },
-        { to: "/camuflar-tiktok", label: "Camuflagem TikTok", icon: Video },
-        { to: "/auto-variacoes", label: "Auto-Variações", icon: Flame, badge: "NOVO" },
-        { to: "/limpar-metadados", label: "Limpar Metadados", icon: ShieldCheck },
-        { to: "/analise-anuncio", label: "Análise de Anúncio", icon: SearchCheck },
-        { to: "/camuflar-texto", label: "Camuflagem de Texto", icon: MessageSquare },
+        { to: "/video", label: t("camuflar_video"), icon: Video },
+        { to: "/imagem", label: t("camuflar_imagem"), icon: ImageIcon },
+        { to: "/camuflar-audio-puro", label: t("camuflar_audio"), icon: Music },
+        { to: "/camuflar-tiktok", label: t("camuflar_tiktok"), icon: Video },
+        { to: "/auto-variacoes", label: t("auto_variacoes"), icon: Flame, badge: "NOVO" },
+        { to: "/limpar-metadados", label: t("limpar_metadados"), icon: ShieldCheck },
+        { to: "/analise-anuncio", label: t("analise_anuncio"), icon: SearchCheck },
+        { to: "/camuflar-texto", label: t("camuflar_texto"), icon: MessageSquare },
       ],
     },
   ];
@@ -109,7 +172,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
         {/* Sidebar */}
         <aside className="sticky top-0 hidden h-screen w-[276px] shrink-0 flex-col border-r border-sidebar-border bg-sidebar md:flex">
           {/* Brand header */}
-          <Link to="/" className="flex items-center gap-2.5 px-5 pt-4 text-xl font-bold tracking-tight">
+          <Link to="/rotabrabaonlog" className="flex items-center gap-2.5 px-5 pt-4 text-xl font-bold tracking-tight">
             <CloakfyLogo className="size-8" />
             <span className="text-white font-extrabold tracking-tight">Cloakfy</span>
           </Link>
@@ -121,7 +184,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground shadow-sm transition-all hover:brightness-110 active:scale-[0.99]"
             >
               <Plus className="size-4 stroke-[3]" />
-              Novo Cloaker
+              {t("novo_cloaker")}
             </button>
           </div>
 
@@ -197,9 +260,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
               >
                 <Instagram className="size-3.5 sm:size-4" />
               </a>
-              <span className="hidden sm:flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground">
-                <span>🇧🇷</span> Português <ChevronDown className="size-3 text-muted-foreground" />
-              </span>
+              <LanguageSelector />
               <span className="grid size-8 place-items-center rounded-full bg-primary text-xs font-bold text-primary-foreground shadow-sm">
                 K
               </span>
@@ -220,7 +281,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-sidebar-border p-4">
-              <Link to="/" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
+              <Link to="/rotabrabaonlog" onClick={() => setMobileOpen(false)} className="flex items-center gap-2.5">
                 <CloakfyLogo className="size-7" />
                 <span className="text-white font-extrabold tracking-tight text-lg">Cloakfy</span>
               </Link>
@@ -240,7 +301,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground shadow-sm"
               >
                 <Plus className="size-4 stroke-[3]" />
-                Novo Cloaker
+                {t("novo_cloaker")}
               </button>
             </div>
 
@@ -282,48 +343,6 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
                   <p className="text-[11px] font-semibold text-primary">Plano Ilimitado</p>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Floating feedback button */}
-      <button
-        onClick={() => setFeedbackOpen(true)}
-        className="fixed bottom-4 right-4 z-30 flex items-center gap-2 rounded-xl border border-border bg-card/90 px-4 py-2.5 text-xs font-semibold text-foreground shadow-lg backdrop-blur hover:bg-card transition-all"
-      >
-        <MessageSquarePlus className="size-4 text-primary" />
-        Feedback
-      </button>
-
-      {/* Feedback Modal */}
-      {feedbackOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm" onClick={() => setFeedbackOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <MessageSquarePlus className="size-5 text-primary" />
-                <h3 className="text-base font-semibold text-foreground">Enviar Feedback</h3>
-              </div>
-              <button onClick={() => setFeedbackOpen(false)} className="text-muted-foreground hover:text-foreground text-sm">✕</button>
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">O que você gostaria de ver melhorado no Cloakfy?</p>
-            <textarea
-              placeholder="Descreva sua sugestão ou problema..."
-              rows={4}
-              className="mt-3 w-full rounded-xl border border-input bg-background p-3 text-xs outline-none focus:border-primary"
-            />
-            <div className="mt-4 flex justify-end gap-2">
-              <button onClick={() => setFeedbackOpen(false)} className="rounded-lg border border-border px-3 py-2 text-xs">Cancelar</button>
-              <button
-                onClick={() => {
-                  toast.success("Feedback recebido com sucesso!");
-                  setFeedbackOpen(false);
-                }}
-                className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground"
-              >
-                Enviar
-              </button>
             </div>
           </div>
         </div>

@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Shield, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { addCloaker, normalizeUrl } from "@/lib/links";
+import { readCustomPages, type CustomPage } from "@/lib/custom-pages";
+import { pageTemplates } from "@/lib/page-templates";
 
 export type Preset = {
   source?: string;
@@ -22,8 +24,20 @@ export function NewLinkDialog({
 }) {
   const [error, setError] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [customPages, setCustomPages] = useState<CustomPage[]>([]);
   const [safeTemplate, setSafeTemplate] = useState(preset?.safeTemplateId || "bella");
   const [mode, setMode] = useState<"basica" | "normal" | "agressiva">("normal");
+
+  useEffect(() => {
+    const list = readCustomPages();
+    setCustomPages(list);
+    if (preset?.safeTemplateId) {
+      setSafeTemplate(preset.safeTemplateId);
+    } else if (list.length > 0) {
+      // Default to the user's latest custom page if available!
+      setSafeTemplate(list[0]!.id);
+    }
+  }, [preset?.safeTemplateId]);
 
   if (!open) return null;
 
@@ -149,18 +163,28 @@ export function NewLinkDialog({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-muted-foreground">Template da Página Safe (White Page)</label>
+                <label className="block text-xs font-medium text-muted-foreground">Página Safe (White Page)</label>
                 <select
                   value={safeTemplate}
                   onChange={(e) => setSafeTemplate(e.target.value)}
                   className="mt-1.5 w-full rounded-lg border border-border bg-[#0d0f10] px-3 py-2 text-xs text-white outline-none focus:border-primary"
                 >
-                  <option value="bella">Studio Bella — Salão & Estética (Beleza)</option>
-                  <option value="derma">DermaCare — Clínica Dermatológica (Saúde)</option>
-                  <option value="stratego">Stratego Consultoria Empresarial (Consultoria)</option>
-                  <option value="techstore">TechStore — Eletrônicos (E-commerce)</option>
-                  <option value="aprenda">Aprenda+ — Cursos Online (Educação)</option>
-                  <option value="invest">Invest Claro — Planejamento (Finanças)</option>
+                  {customPages.length > 0 && (
+                    <optgroup label="Minhas Páginas Salvas (HTML Próprio)">
+                      {customPages.map((cp) => (
+                        <option key={cp.id} value={cp.id}>
+                          ★ {cp.title} ({cp.topic})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Templates Prontos">
+                    {pageTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.category})
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
 

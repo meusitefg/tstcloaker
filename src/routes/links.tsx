@@ -6,6 +6,7 @@ import { AppShell, Empty, NewCloakerButton, PageHeader, Panel } from "@/componen
 import { removeLink, shareUrl, toggleLink, useLinks, simulateVisit, addLink, updateCloaker } from "@/lib/links";
 import type { Cloaker } from "@/lib/links";
 import { pageTemplates } from "@/lib/page-templates";
+import { readCustomPages } from "@/lib/custom-pages";
 
 export const Route = createFileRoute("/links")({
   head: () => ({
@@ -160,9 +161,20 @@ function CloakersPage() {
                   onChange={(e) => setEditSafeTemplate(e.target.value)}
                   className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-sm text-white outline-none focus:border-primary"
                 >
-                  {pageTemplates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
-                  ))}
+                  {readCustomPages().length > 0 && (
+                    <optgroup label="Minhas Páginas Salvas (HTML Próprio)">
+                      {readCustomPages().map((cp) => (
+                        <option key={cp.id} value={cp.id}>
+                          ★ {cp.title} ({cp.topic})
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Templates Prontos">
+                    {pageTemplates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.category})</option>
+                    ))}
+                  </optgroup>
                 </select>
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   A página safe selecionada será exibida automaticamente para moderadores e bots.

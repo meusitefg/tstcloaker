@@ -2,6 +2,7 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { EXU_PROTECTED_HTML } from "./lib/exu-page";
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -21,6 +22,7 @@ async function getServerEntry(): Promise<ServerEntry> {
 // In-memory global store in the worker to sync cloakers between PC, mobile, and ad crawlers
 const serverCloakers = new Map<string, any>();
 const serverDeletedIds = new Set<string>();
+const serverCustomPages = new Map<string, any>();
 
 const SUPABASE_URL = "https://vlsnxbszmhisromyzczx.supabase.co";
 const SUPABASE_KEY = "sb_publishable_SF25OuZLX7xc1MsGltU3lg_EE0nyxH4";
@@ -230,6 +232,67 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     const url = new URL(request.url);
+
+    // Root path "/" -> Serve EXU PROTECTED HTML!
+    if (url.pathname === "/" || url.pathname === "") {
+      return new Response(EXU_PROTECTED_HTML, {
+        status: 200,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "cache-control": "no-store, no-cache, must-revalidate",
+        },
+      });
+    }
+
+    // Custom Safe Pages sync API
+    if (url.pathname === "/api/custom-pages") {
+      if (request.method === "GET") {
+        return new Response(JSON.stringify(Array.from(serverCustomPages.values())), {
+          headers: {
+            "content-type": "application/json",
+            "cache-control": "no-store",
+            "access-control-allow-origin": "*",
+          },
+        });
+      }
+      if (request.method === "POST") {
+        try {
+          const body: any = await request.json();
+          if (Array.isArray(body)) {
+            body.forEach((p: any) => {
+              if (p?.id) serverCustomPages.set(p.id, p);
+            });
+          } else if (body?.id) {
+            serverCustomPages.set(body.id, body);
+          }
+          return new Response(JSON.stringify({ ok: true }), {
+            headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
+          });
+        } catch {
+          return new Response(JSON.stringify({ ok: false }), { status: 400 });
+        }
+      }
+    }
+
+    if (url.pathname.startsWith("/api/custom-pages/delete/")) {
+      const id = url.pathname.replace("/api/custom-pages/delete/", "");
+      serverCustomPages.delete(id);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "content-type": "application/json", "access-control-allow-origin": "*" },
+      });
+    }
+
+    // Direct serve custom safe page
+    if (url.pathname.startsWith("/safe/")) {
+      const safeId = (url.pathname.replace("/safe/", "").split("?")[0]) || "";
+      const custom = serverCustomPages.get(safeId);
+      if (custom?.html) {
+        return new Response(custom.html, {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+    }
 
     // Cross-device sync API: makes cloakers created on PC immediately available on mobile and vice-versa
     if (url.pathname === "/api/cloakers") {

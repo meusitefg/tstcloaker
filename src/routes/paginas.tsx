@@ -12,10 +12,20 @@ import {
   Trash2,
   Check,
   Sparkles,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell, PageHeader, Panel, PrimaryButton, useNewCloaker } from "@/components/AppShell";
 import { pageTemplates, renderTemplate, type PageTemplate } from "@/lib/page-templates";
+import {
+  readCustomPages,
+  writeCustomPages,
+  saveCustomPage,
+  deleteCustomPage,
+  readTopics,
+  addTopic,
+  type CustomPage,
+} from "@/lib/custom-pages";
 
 export const Route = createFileRoute("/paginas")({
   head: () => ({
@@ -29,54 +39,32 @@ export const Route = createFileRoute("/paginas")({
   component: SafePages,
 });
 
-export const TOPICOS = [
-  "Todos",
-  "Beleza",
-  "Consultoria",
-  "E-commerce",
-  "Educação",
-  "Finanças",
-  "Saúde",
-  "Tecnologia",
-];
-
-type CustomPage = {
-  id: string;
-  title: string;
-  topic: string;
-  html: string;
-  createdAt: string;
-};
-
-const STORAGE_CUSTOM_PAGES = "cloakfy-custom-pages";
-
-function readCustomPages(): CustomPage[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_CUSTOM_PAGES);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeCustomPages(pages: CustomPage[]) {
-  if (typeof window !== "undefined") {
-    localStorage.setItem(STORAGE_CUSTOM_PAGES, JSON.stringify(pages));
-  }
-}
-
 function SafePages() {
   const [cat, setCat] = useState("Todos");
+  const [topics, setTopics] = useState<string[]>([]);
   const [customPages, setCustomPages] = useState<CustomPage[]>([]);
   const [filtroTopicoCustom, setFiltroTopicoCustom] = useState("Todos");
   const [preview, setPreview] = useState<{ title: string; html: string } | null>(null);
   const [showEditor, setShowEditor] = useState(false);
+  const [showAddTopic, setShowAddTopic] = useState(false);
+  const [newTopicName, setNewTopicName] = useState("");
   const openNewCloaker = useNewCloaker();
 
   useEffect(() => {
     setCustomPages(readCustomPages());
+    setTopics(readTopics());
   }, []);
+
+  const handleAddNewTopic = () => {
+    const trimmed = newTopicName.trim();
+    if (!trimmed) return;
+    const updated = addTopic(trimmed);
+    setTopics(updated);
+    setFiltroTopicoCustom(trimmed);
+    setNewTopicName("");
+    setShowAddTopic(false);
+    toast.success(`Tópico "${trimmed}" adicionado com sucesso!`);
+  };
 
   const list = pageTemplates.filter((t) => cat === "Todos" || t.category === cat);
 
@@ -86,24 +74,17 @@ function SafePages() {
 
   const handleDeleteCustomPage = (id: string) => {
     if (confirm("Deseja realmente excluir esta página personalizada?")) {
-      const next = customPages.filter((p) => p.id !== id);
-      setCustomPages(next);
-      writeCustomPages(next);
+      deleteCustomPage(id);
+      setCustomPages(readCustomPages());
       toast.success("Página excluída com sucesso!");
     }
   };
 
   const handleSaveCustomPage = (page: Omit<CustomPage, "id" | "createdAt">) => {
-    const newPage: CustomPage = {
-      ...page,
-      id: Math.random().toString(36).slice(2, 9),
-      createdAt: new Date().toISOString(),
-    };
-    const next = [newPage, ...customPages];
-    setCustomPages(next);
-    writeCustomPages(next);
+    const saved = saveCustomPage(page);
+    setCustomPages(readCustomPages());
     setShowEditor(false);
-    toast.success("Página personalizada salva com sucesso!");
+    toast.success(`Página "${saved.title}" salva! Agora você já pode selecioná-la como Página Safe nos seus Cloakers.`);
   };
 
   const copyHtml = async (html: string) => {
@@ -117,8 +98,8 @@ function SafePages() {
   };
 
   const handleUseCustomPage = (p: CustomPage) => {
-    openNewCloaker({ name: p.title });
-    toast.success(`Página "${p.title}" pronta para usar como white page!`);
+    openNewCloaker({ name: p.title, safeTemplateId: p.id });
+    toast.success(`Página "${p.title}" selecionada como White Page para o Cloaker!`);
   };
 
   return (
@@ -136,7 +117,7 @@ function SafePages() {
             Minha página (HTML próprio)
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Cole seu próprio HTML — servido transparente no seu domínio com preview e organização por tópicos.
+            Cole seu próprio HTML sem limites de tamanho — servido transparente e pronto para usar em seus cloakers.
           </p>
         </div>
         {!showEditor && (
@@ -145,7 +126,7 @@ function SafePages() {
             className="self-start sm:self-auto inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all shadow-sm"
           >
             <Plus className="size-3.5 stroke-[3]" />
-            Criar HTML
+            Criar HTML Próprio
           </button>
         )}
       </div>
@@ -153,6 +134,11 @@ function SafePages() {
       {/* Editor or List of Custom Pages */}
       {showEditor ? (
         <CustomHtmlEditor
+          topics={topics}
+          onAddTopic={(name) => {
+            const updated = addTopic(name);
+            setTopics(updated);
+          }}
           onSave={handleSaveCustomPage}
           onClose={() => setShowEditor(false)}
         />
@@ -163,7 +149,7 @@ function SafePages() {
           </div>
           <p className="mt-4 font-semibold text-white">Nenhuma página própria criada ainda</p>
           <p className="mt-1 text-xs text-muted-foreground max-w-sm">
-            Crie sua primeira página personalizada com o seu HTML para usar como safe page em seus anúncios.
+            Crie sua primeira página personalizada com o seu HTML (sem limites de tamanho) para usar como safe page em seus anúncios.
           </p>
           <div className="mt-5">
             <PrimaryButton onClick={() => setShowEditor(true)} className="text-xs">
@@ -175,8 +161,8 @@ function SafePages() {
       ) : (
         <div className="mt-4 space-y-4">
           {/* Topic filter for custom pages */}
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {TOPICOS.map((t) => (
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {topics.map((t) => (
               <button
                 key={t}
                 onClick={() => setFiltroTopicoCustom(t)}
@@ -189,6 +175,40 @@ function SafePages() {
                 {t}
               </button>
             ))}
+
+            {showAddTopic ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  placeholder="Nome do nicho..."
+                  value={newTopicName}
+                  onChange={(e) => setNewTopicName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddNewTopic()}
+                  autoFocus
+                  className="rounded-full border border-primary bg-[#0d0f10] px-3 py-1 text-xs text-white outline-none w-36"
+                />
+                <button
+                  onClick={handleAddNewTopic}
+                  className="grid size-7 place-items-center rounded-full bg-primary text-primary-foreground text-xs font-bold"
+                >
+                  <Check className="size-3.5" />
+                </button>
+                <button
+                  onClick={() => setShowAddTopic(false)}
+                  className="grid size-7 place-items-center rounded-full border border-border text-muted-foreground hover:text-white text-xs"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAddTopic(true)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary transition-all whitespace-nowrap"
+              >
+                <Plus className="size-3.5" />
+                Novo Tópico
+              </button>
+            )}
           </div>
 
           {/* Custom pages grid */}
@@ -235,10 +255,10 @@ function SafePages() {
                   </button>
                   <button
                     onClick={() => handleUseCustomPage(p)}
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-primary py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all"
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-primary py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all shadow-sm"
                   >
-                    <ExternalLink className="size-3.5" />
-                    Usar
+                    <Layers className="size-3.5" />
+                    Usar no Cloaker
                   </button>
                 </div>
               </div>
@@ -248,105 +268,107 @@ function SafePages() {
       )}
 
       {/* Ready Templates Section */}
-      <div className="mt-12">
-        <h2 className="text-sm font-bold text-white">Templates Prontos</h2>
+      <div className="mt-10 mb-3">
+        <h2 className="text-sm font-bold text-white flex items-center gap-2">
+          <Sparkles className="size-4 text-primary" />
+          Templates Prontos do Sistema
+        </h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Modelos de alta conversão aprovados por bots do Facebook, Google e TikTok Ads.
+          Páginas institucionais de alta conversão prontas para rodar de imediato.
         </p>
+      </div>
 
-        {/* Category Tabs */}
-        <div className="mt-4 flex gap-6 overflow-x-auto border-b border-border text-xs font-medium">
-          {TOPICOS.map((c) => (
-            <button
-              key={c}
-              onClick={() => setCat(c)}
-              className={`whitespace-nowrap border-b-2 pb-3 transition-colors ${
-                cat === c
-                  ? "border-primary font-bold text-white"
-                  : "border-transparent text-muted-foreground hover:text-white"
-              }`}
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {["Todos", "Beleza", "Saúde", "Consultoria", "E-commerce", "Educação", "Finanças"].map((c) => (
+          <button
+            key={c}
+            onClick={() => setCat(c)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-all ${
+              cat === c
+                ? "bg-primary text-primary-foreground border-primary font-bold shadow-sm"
+                : "bg-card/70 border-border text-muted-foreground hover:text-white hover:bg-card"
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {list.map((t) => {
+          const previewHtml = renderTemplate(t);
+          return (
+            <div
+              key={t.id}
+              className="rounded-2xl border border-border bg-[#14171a] overflow-hidden flex flex-col hover:border-primary/40 transition-colors shadow-lg"
             >
-              {c}
-            </button>
-          ))}
-        </div>
+              <div className="p-3.5 flex items-center justify-between border-b border-border bg-card/40">
+                <div>
+                  <h4 className="font-semibold text-sm text-white">{t.name}</h4>
+                  <span className="text-[10px] text-muted-foreground">{t.category}</span>
+                </div>
+                <span className="size-3 rounded-full" style={{ backgroundColor: t.color }} />
+              </div>
 
-        {/* Templates Grid */}
-        <div className="mt-6 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {list.map((t) => (
-            <Panel key={t.id} className="bg-[#14171a] border-border overflow-hidden">
-              {/* Miniature live preview */}
-              <div className="pointer-events-none h-48 overflow-hidden border-b border-border bg-white">
+              <div className="h-44 w-full bg-white relative overflow-hidden pointer-events-none">
                 <iframe
+                  srcDoc={previewHtml}
                   title={t.name}
-                  srcDoc={renderTemplate(t)}
-                  className="h-[600px] w-[200%] origin-top-left scale-50"
-                  tabIndex={-1}
+                  sandbox="allow-scripts"
+                  className="w-[200%] h-[200%] origin-top-left scale-50 border-0"
                 />
               </div>
-              <div className="p-4">
-                <p className="font-semibold text-sm text-white truncate">{t.name}</p>
-                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Folder className="size-3 text-primary" />
-                  {t.category}
-                </p>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => setPreview({ title: t.name, html: renderTemplate(t) })}
-                    className="flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card/60 py-2 text-xs font-medium text-white hover:bg-accent transition-colors"
-                  >
-                    <Eye className="size-3.5" />
-                    Preview
-                  </button>
-                  <button
-                    onClick={() => handleUseTemplate(t)}
-                    className="flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all"
-                  >
-                    <ExternalLink className="size-3.5" />
-                    Usar
-                  </button>
-                </div>
+
+              <div className="p-3 flex items-center justify-between gap-2 border-t border-border mt-auto bg-card/20">
+                <button
+                  onClick={() => setPreview({ title: t.name, html: previewHtml })}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-border bg-card/60 py-2 text-xs font-semibold text-white hover:bg-accent transition-colors"
+                >
+                  <Eye className="size-3.5" />
+                  Preview
+                </button>
+                <button
+                  onClick={() => handleUseTemplate(t)}
+                  className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-primary py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all shadow-sm"
+                >
+                  <Layers className="size-3.5" />
+                  Usar no Cloaker
+                </button>
               </div>
-            </Panel>
-          ))}
-        </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Full Preview Modal */}
       {preview && (
         <div
-          className="fixed inset-0 z-50 flex flex-col bg-black/90 p-4 md:p-6 backdrop-blur-md"
+          className="fixed inset-0 z-50 flex flex-col bg-black/90 p-4 backdrop-blur-sm"
           onClick={() => setPreview(null)}
         >
-          <div
-            className="mb-3 flex items-center justify-between"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="size-5 text-primary" />
-              <p className="font-semibold text-white text-sm">{preview.title}</p>
-            </div>
+          <div className="flex items-center justify-between pb-3 border-b border-white/10 px-2">
+            <h3 className="text-sm font-bold text-white">{preview.title}</h3>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => copyHtml(preview.html)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all"
+                onClick={(e) => { e.stopPropagation(); copyHtml(preview.html); }}
+                className="flex items-center gap-1.5 rounded-xl bg-secondary px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent"
               >
                 <Copy className="size-3.5" />
                 Copiar HTML
               </button>
               <button
-                aria-label="Fechar"
                 onClick={() => setPreview(null)}
-                className="grid size-9 place-items-center rounded-lg border border-border bg-card text-muted-foreground hover:text-white"
+                className="grid size-8 place-items-center rounded-xl border border-white/20 text-white hover:bg-white/10"
               >
                 <X className="size-4" />
               </button>
             </div>
           </div>
           <iframe
-            title="Prévia"
+            title={preview.title}
             srcDoc={preview.html}
-            className="flex-1 rounded-xl border border-border bg-white shadow-2xl"
+            sandbox="allow-scripts"
+            className="flex-1 w-full mt-3 rounded-2xl bg-white border-0 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           />
         </div>
@@ -356,14 +378,20 @@ function SafePages() {
 }
 
 function CustomHtmlEditor({
+  topics,
+  onAddTopic,
   onSave,
   onClose,
 }: {
+  topics: string[];
+  onAddTopic: (name: string) => void;
   onSave: (data: { title: string; topic: string; html: string }) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState("Minha Página Safe");
-  const [topic, setTopic] = useState("Beleza");
+  const [topic, setTopic] = useState(topics.find((t) => t !== "Todos") || "Beleza");
+  const [showAddTopic, setShowAddTopic] = useState(false);
+  const [newTopicName, setNewTopicName] = useState("");
   const [html, setHtml] = useState(
     `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -389,6 +417,18 @@ function CustomHtmlEditor({
 </html>`
   );
 
+  const htmlSizeKb = (new Blob([html]).size / 1024).toFixed(1);
+
+  const handleCreateTopic = () => {
+    const trimmed = newTopicName.trim();
+    if (!trimmed) return;
+    onAddTopic(trimmed);
+    setTopic(trimmed);
+    setNewTopicName("");
+    setShowAddTopic(false);
+    toast.success(`Tópico "${trimmed}" adicionado!`);
+  };
+
   const handleSave = () => {
     if (!title.trim()) {
       toast.error("Informe um título para a página.");
@@ -406,7 +446,7 @@ function CustomHtmlEditor({
       <div className="p-4 border-b border-border flex items-center justify-between bg-card/30">
         <div className="flex items-center gap-2">
           <FileCode className="size-4 text-primary" />
-          <h3 className="text-sm font-bold text-white">Criar Página HTML Própria</h3>
+          <h3 className="text-sm font-bold text-white">Criar Página HTML Própria (Sem Limites de Tamanho)</h3>
         </div>
         <button
           onClick={onClose}
@@ -429,33 +469,77 @@ function CustomHtmlEditor({
         </div>
 
         <div>
-          <label className="text-xs font-semibold text-white block mb-1.5">Tópico / Nicho</label>
-          <select
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-xs text-white outline-none focus:border-primary"
-          >
-            {TOPICOS.filter((t) => t !== "Todos").map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-xs font-semibold text-white">Tópico / Nicho</label>
+            <button
+              type="button"
+              onClick={() => setShowAddTopic(!showAddTopic)}
+              className="text-[11px] font-bold text-primary hover:underline flex items-center gap-1"
+            >
+              <Plus className="size-3" />
+              Adicionar Novo Tópico
+            </button>
+          </div>
+
+          {showAddTopic ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Novo tópico/nicho..."
+                value={newTopicName}
+                onChange={(e) => setNewTopicName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleCreateTopic()}
+                autoFocus
+                className="flex-1 rounded-xl border border-primary bg-[#0d0f10] px-3 py-2 text-xs text-white outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleCreateTopic}
+                className="rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground"
+              >
+                Salvar
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddTopic(false)}
+                className="rounded-xl border border-border px-2.5 py-2 text-xs text-muted-foreground hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <select
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              className="w-full rounded-xl border border-border bg-[#0d0f10] px-3.5 py-2.5 text-xs text-white outline-none focus:border-primary"
+            >
+              {topics.filter((t) => t !== "Todos").map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
       <div className="grid lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-border">
         <div className="p-4 flex flex-col">
           <label className="text-xs font-semibold text-muted-foreground mb-2 flex items-center justify-between">
-            <span>Editor de Código HTML</span>
-            <span className="text-[10px] text-primary font-mono">HTML5 Puro</span>
+            <span className="flex items-center gap-1.5 text-white">
+              <FileCode className="size-3.5 text-primary" />
+              Editor de Código HTML
+            </span>
+            <span className="text-[11px] text-primary font-mono bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+              {htmlSizeKb} KB — Sem Limites
+            </span>
           </label>
           <textarea
             value={html}
             onChange={(e) => setHtml(e.target.value)}
-            rows={14}
+            rows={15}
             className="w-full flex-1 resize-none rounded-xl border border-border bg-[#0d0f10] p-3 font-mono text-xs text-white outline-none focus:border-primary"
-            placeholder="Cole seu código HTML aqui..."
+            placeholder="Cole seu código HTML completo aqui sem limites de linhas ou tamanho..."
           />
         </div>
 
@@ -478,16 +562,16 @@ function CustomHtmlEditor({
       <div className="flex items-center justify-end gap-2 border-t border-border p-4 bg-card/40">
         <button
           onClick={onClose}
-          className="rounded-xl border border-border bg-card/60 px-4 py-2.5 text-xs font-semibold text-muted-foreground hover:text-white"
+          className="rounded-xl border border-border bg-card/60 px-4 py-2.5 text-xs font-medium text-muted-foreground hover:text-white"
         >
           Cancelar
         </button>
         <button
           onClick={handleSave}
-          className="flex items-center gap-1.5 rounded-xl bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground hover:brightness-110 transition-all shadow-md shadow-primary/20"
+          className="flex items-center gap-1.5 rounded-xl bg-primary px-6 py-2.5 text-xs font-bold text-primary-foreground hover:brightness-110 shadow-sm transition-all"
         >
           <Check className="size-4" />
-          Salvar Página
+          Salvar Página HTML
         </button>
       </div>
     </Panel>

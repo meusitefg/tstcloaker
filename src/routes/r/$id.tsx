@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { registerVisit, readCloakers, readDeletedIds, markAsDeleted, type Cloaker } from "@/lib/links";
 import { pageTemplates, renderTemplate, type PageTemplate } from "@/lib/page-templates";
+import { readCustomPages } from "@/lib/custom-pages";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
 export const Route = createFileRoute("/r/$id")({
@@ -17,6 +18,7 @@ export const Route = createFileRoute("/r/$id")({
 function RedirectPage() {
   const { id } = Route.useParams();
   const [safeTemplate, setSafeTemplate] = useState<PageTemplate | null>(null);
+  const [customSafeHtml, setCustomSafeHtml] = useState<string | null>(null);
   const [is404, setIs404] = useState(false);
 
   useEffect(() => {
@@ -142,6 +144,15 @@ function RedirectPage() {
       if (shouldShowSafe || !cloaker.destination) {
         // Resolve the exact safe template configured for this cloaker
         const templateId = cloaker.safeTemplateId || "bella";
+        const customMatch = readCustomPages().find(
+          (cp) => cp.id === templateId || `custom:${cp.id}` === templateId || cloaker?.safePage?.includes(cp.id)
+        );
+        if (customMatch) {
+          registerVisit(id, true);
+          setCustomSafeHtml(customMatch.html);
+          return;
+        }
+
         const template = pageTemplates.find((t) => t.id === templateId) || pageTemplates[0]!;
         registerVisit(id, true);
         setSafeTemplate(template);
@@ -182,7 +193,20 @@ function RedirectPage() {
     );
   }
 
-  // Active cloaker on direct access / review -> Safe Page
+  // Active cloaker on direct access / review -> Custom Safe Page
+  if (customSafeHtml) {
+    return (
+      <div className="fixed inset-0 h-screen w-screen bg-white z-[99999]">
+        <iframe
+          srcDoc={customSafeHtml}
+          title="Página Safe"
+          className="h-full w-full border-none"
+        />
+      </div>
+    );
+  }
+
+  // Active cloaker on direct access / review -> Safe Page Template
   if (safeTemplate) {
     const html = renderTemplate(safeTemplate);
     return (
